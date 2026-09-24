@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+checkpoints/
+*.pt
+*.pth
+data/            # 数据集不入库
+.ipynb_checkpoints/
