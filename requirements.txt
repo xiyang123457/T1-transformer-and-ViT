@@ -1,0 +1,12 @@
+# ── 依赖清单 ──────────────────────────────────────────────
+# PyTorch（RTX 5060 = Blackwell sm_120，必须用 cu128+ 的 wheel，否则静默装成 CPU 版）
+# 你当前 conda env 'pytorch' 已装 torch==2.9.0+cu130，全新环境请改用下方命令安装：
+#   pip install torch --index-url https://download.pytorch.org/whl/cu130
+torch==2.9.0
+
+# ViT / DeiT 权重与模型
+timm==1.*
+
+# 工具
+pandas
+matplotlib

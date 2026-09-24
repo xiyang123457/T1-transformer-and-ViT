@@ -1,7 +1,20 @@
+# Python
 __pycache__/
 *.pyc
+*.egg-info/
+.venv/
+venv/
+
+# 训练产物
 checkpoints/
 *.pt
 *.pth
-data/            # 数据集不入库
+*.ckpt
+runs/
+wandb/
+
+# 数据（不入库）
+data/
+
+# Notebook
 .ipynb_checkpoints/
