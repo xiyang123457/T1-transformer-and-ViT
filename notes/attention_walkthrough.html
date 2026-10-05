@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>attention.py 逐行讲解</title>
+<style>
+:root{
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", sans-serif;
+  --font-mono: "Cascadia Code", "JetBrains Mono", Consolas, "SF Mono", Menlo, monospace;
+  --bg:#FBFAF7; --surface:#FFFFFF; --surface-2:#F5F4EF; --surface-3:#EFEEE8;
+  --text:#26251F; --text-2:#5F5E5A; --text-3:#8C8A82;
+  --border:#E5E3DA; --border-2:#D3D1C7;
+  --blue:#185FA5; --blue-soft:#E6F1FB; --blue-deep:#0C447C;
+  --amber:#854F0B; --amber-soft:#FAEEDA; --amber-deep:#633806;
+  --teal:#0F6E56; --teal-soft:#E1F5EE; --teal-deep:#085041;
+  --purple:#534AB7; --purple-soft:#EEEDFE; --purple-deep:#3C3489;
+  --red:#A32D2D; --red-soft:#FCEBEB;
+  --green:#3B6D11; --green-soft:#EAF3DE;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font-sans);
+  font-size:16px;line-height:1.85;-webkit-font-smoothing:antialiased}
+main{max-width:800px;margin:0 auto;padding:48px 32px 110px;background:var(--surface);
+  border-left:1px solid var(--border);border-right:1px solid var(--border);min-height:100vh}
+
+header.doc{padding-bottom:24px;border-bottom:1px solid var(--border)}
+header.doc h1{font-size:29px;line-height:1.3;font-weight:600;letter-spacing:-.01em;margin:0 0 12px}
+.lede{font-size:15px;color:var(--text-2);margin:0}
+.lede + .lede{margin-top:10px}
+.tagrow{margin-top:14px;display:flex;gap:8px;flex-wrap:wrap}
+.tag{font-size:12px;padding:3px 10px;border-radius:999px;background:var(--surface-2);
+  color:var(--text-2);border:1px solid var(--border)}
+.tag.ok{background:var(--green-soft);border-color:#C0DD97;color:var(--green)}
+
+nav.mini{margin:28px 0 8px;padding:18px 22px;background:var(--surface-2);border-radius:12px}
+nav.mini .t{font-size:12px;letter-spacing:.1em;color:var(--text-3);margin-bottom:10px}
+nav.mini ol{margin:0;padding-left:20px;font-size:14.5px;line-height:2}
+nav.mini a{color:var(--text-2);text-decoration:none}
+nav.mini a:hover{color:var(--blue);text-decoration:underline}
+
+h2{font-size:22px;font-weight:600;margin:56px 0 16px;scroll-margin-top:20px}
+h2 .num{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;
+  margin-right:10px;border-radius:50%;background:var(--blue-soft);color:var(--blue-deep);
+  font-family:var(--font-mono);font-size:14px;font-weight:600;vertical-align:2px}
+h3{font-size:17px;font-weight:600;margin:36px 0 12px;scroll-margin-top:20px}
+h4{font-size:15.5px;font-weight:600;margin:26px 0 8px;color:var(--text)}
+p{margin:16px 0}
+strong{font-weight:600}
+a{color:var(--blue)}
+hr{border:0;border-top:1px solid var(--border);margin:48px 0}
+
+code{font-family:var(--font-mono);font-size:.86em;background:var(--surface-2);
+  border:1px solid var(--border);border-radius:4px;padding:.1em .36em;color:#3A3830;white-space:nowrap}
+
+blockquote{margin:20px 0;padding:2px 0 2px 18px;border-left:3px solid var(--border-2);
+  color:var(--text-2);font-size:15.5px}
+blockquote p{margin:8px 0}
+
+pre{margin:18px 0;padding:15px 18px;background:var(--surface-2);border:1px solid var(--border);
+  border-radius:10px;overflow-x:auto;font-family:var(--font-mono);font-size:13px;line-height:1.8;
+  color:#33322B;white-space:pre}
+pre .c{color:#8C8A82}
+pre .hi{color:var(--red);font-weight:600}
+pre .ok{color:var(--teal);font-weight:600}
+
+.table-wrap{margin:22px 0;overflow-x:auto;border:1px solid var(--border);border-radius:10px}
+table{border-collapse:collapse;width:100%;font-size:14.2px;background:var(--surface)}
+th,td{padding:10px 14px;text-align:left;border-bottom:1px solid var(--border);vertical-align:top}
+thead th{background:var(--surface-3);font-weight:600;font-size:13.4px;white-space:nowrap}
+tbody tr:last-child td{border-bottom:0}
+td.mono,th.mono{font-family:var(--font-mono);font-size:13px;white-space:nowrap}
+tr.hl{background:var(--green-soft)}
+
+.callout{margin:24px 0;padding:16px 20px;border-radius:12px;background:var(--amber-soft);
+  border-left:3px solid var(--amber);color:#4E2C06;font-size:15.2px}
+.callout p{margin:0}
+.callout p + p{margin-top:10px}
+.callout .tag2{display:block;font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;
+  font-weight:600;opacity:.7;margin-bottom:8px}
+.callout.blue{background:var(--blue-soft);border-left-color:var(--blue);color:#123F6B}
+.callout.red{background:var(--red-soft);border-left-color:var(--red);color:#5A1F1F}
+.callout.green{background:var(--green-soft);border-left-color:var(--green);color:#274A08}
+
+figure{margin:28px 0;padding:20px 16px 14px;background:var(--surface);
+  border:1px solid var(--border);border-radius:12px}
+figure svg{display:block;width:100%;height:auto}
+figcaption{margin-top:14px;padding-top:12px;border-top:1px solid var(--border);
+  font-size:13.4px;color:var(--text-3);line-height:1.7}
+figcaption b{color:var(--text-2);font-weight:600}
+
+footer{margin-top:56px;padding-top:22px;border-top:1px solid var(--border);
+  font-size:13.4px;color:var(--text-3)}
+
+#printBtn{position:fixed;right:22px;bottom:22px;padding:9px 16px;font-family:var(--font-sans);
+  font-size:13px;color:var(--blue-deep);background:var(--surface);border:1px solid var(--border-2);
+  border-radius:999px;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,.07)}
+#printBtn:hover{background:var(--blue-soft);border-color:var(--blue)}
+
+@media (max-width:820px){
+  main{padding:30px 20px 90px;border:0}
+  header.doc h1{font-size:24px}
+  body{font-size:15.5px}
+}
+@media print{
+  @page{margin:16mm 14mm}
+  body{background:#fff;font-size:10.6pt;line-height:1.62}
+  main{max-width:none;padding:0;border:0}
+  #printBtn{display:none}
+  header.doc h1{font-size:19pt}
+  h2{font-size:13.2pt;margin:22pt 0 8pt;page-break-after:avoid;break-after:avoid}
+  h3{font-size:11.6pt;margin:14pt 0 6pt;page-break-after:avoid;break-after:avoid}
+  nav.mini{background:none;border:1px solid var(--border)}
+  pre,figure,.table-wrap,.callout{page-break-inside:avoid;break-inside:avoid}
+  a{color:inherit;text-decoration:none}
+}
+</style>
+</head>
+<body>
+<main>
+
+<header class="doc">
+  <h1>attention.py 逐行讲解</h1>
+  <p class="lede">
+    这份是对 <code>attention.py</code> 里 <code>scaled_dot_product_attention</code> 的详细拆解。
+  </p>
+  <p class="lede">
+    你写的这版数值上是完全正确的——和官方 <code>F.scaled_dot_product_attention</code> 误差 0，
+    dropout 位置也对。所以这份不是改错，是把每一步「为什么这么写」补上。
+  </p>
+  <p class="lede">
+    看不懂的地方通常是同一个原因：<strong>形状在脑子里跟不上</strong>。所以这份的主线是形状，数字只是证据。
+  </p>
+  <div class="tagrow">
+    <span class="tag ok">与官方误差 0.000e+00</span>
+    <span class="tag">用真实数字走一遍</span>
+    <span class="tag">含 3 处可改进点</span>
+  </div>
+</header>
+
+<nav class="mini">
+  <div class="t">目录</div>
+  <ol>
+    <li><a href="#s0">一句话模型</a></li>
+    <li><a href="#s1">形状表（先看这个）</a></li>
+    <li><a href="#s2">用真实数字走一遍</a></li>
+    <li><a href="#s3">逐行讲你的代码</a></li>
+    <li><a href="#s4">三处建议改的地方</a></li>
+    <li><a href="#s5">怎么确认自己真的懂了</a></li>
+    <li><a href="#s6">和任务书对一下进度</a></li>
+  </ol>
+</nav>
+
+<hr>
+
+<h2 id="s0"><span class="num">0</span>一句话模型</h2>
+
+<p>整个函数就三件事：</p>
+
+<div class="callout blue">
+  <p style="text-align:center;font-size:18px;letter-spacing:.05em">
+    <strong>打分　→　归一化　→　加权平均</strong>
+  </p>
+</div>
+
+<ul>
+  <li><strong>打分</strong>：每个 token 拿自己的 <code>Q</code>，去和所有 token 的 <code>K</code> 比一遍，得到一串分数</li>
+  <li><strong>归一化</strong>：把分数变成加起来等于 1 的权重</li>
+  <li><strong>加权平均</strong>：按权重把所有人的 <code>V</code> 混起来，作为自己的新表示</li>
+</ul>
+
+<p>你的代码就是这三件事，中间插了三个补丁：缩放、mask、dropout。</p>
+
+<hr>
+
+<h2 id="s1"><span class="num">1</span>形状表（先看这个，再看代码）</h2>
+
+<p>设 <code>B=1, N=3, d_k=4</code>。</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>步骤</th><th>变量</th><th>形状</th><th>每个数字的含义</th></tr></thead>
+<tbody>
+<tr><td>输入</td><td class="mono">Q / K / V</td><td class="mono">(1, 3, 4)</td><td>3 个 token，每个用 4 个数字表示</td></tr>
+<tr><td>① <code>Q @ K^T</code></td><td class="mono">scores</td><td class="mono">(1, 3, 3)</td><td><code>[b, i, j]</code> = 第 i 个 token 给第 j 个 token 打的分</td></tr>
+<tr><td>② <code>÷√d_k</code></td><td class="mono">scores</td><td class="mono">(1, 3, 3)</td><td>形状不变，数值缩小</td></tr>
+<tr><td>③ <code>softmax(-1)</code></td><td class="mono">attn</td><td class="mono">(1, 3, 3)</td><td><code>[b, i, j]</code> = 第 i 个分给第 j 个的比例，<strong>每行和 = 1</strong></td></tr>
+<tr><td>④ <code>attn @ V</code></td><td class="mono">out</td><td class="mono">(1, 3, 4)</td><td>又回到 <code>(B, N, d_k)</code>，可以喂给下一层</td></tr>
+</tbody>
+</table>
+</div>
+
+<p><strong>唯一变的是中间那个 <code>(B, N, N)</code>。</strong>输入输出形状一样，中间冒出一个 N×N 的方阵。这个方阵就是 attention 的全部内容。</p>
+
+<figure>
+<svg viewBox="0 0 680 152" width="100%" role="img" xmlns="http://www.w3.org/2000/svg">
+<title>scaled dot product attention 的形状流转</title>
+<desc>输入 Q K V 是 B N d_k，经过 Q 乘 K 转置得到 B N N 的分数矩阵，softmax 后形状不变，最后乘 V 回到 B N d_k。</desc>
+<defs>
+<marker id="a1" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+<path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</marker>
+</defs>
+
+<g font-family="var(--font-sans)">
+<rect x="42" y="40" width="125" height="64" rx="9" fill="#E6F1FB" stroke="#185FA5" stroke-width="0.5"/>
+<text x="104" y="62" font-size="13" font-weight="500" fill="#0C447C" text-anchor="middle" dominant-baseline="central">输入 Q/K/V</text>
+<text x="104" y="84" font-size="12.5" font-family="var(--font-mono)" fill="#185FA5" text-anchor="middle" dominant-baseline="central">(B, N, d_k)</text>
+
+<rect x="199" y="40" width="125" height="64" rx="9" fill="#FAEEDA" stroke="#854F0B" stroke-width="0.5"/>
+<text x="261" y="62" font-size="13" font-weight="500" fill="#633806" text-anchor="middle" dominant-baseline="central">Q @ Kᵀ</text>
+<text x="261" y="84" font-size="12.5" font-family="var(--font-mono)" fill="#854F0B" text-anchor="middle" dominant-baseline="central">(B, N, N)</text>
+
+<rect x="356" y="40" width="125" height="64" rx="9" fill="#FAEEDA" stroke="#854F0B" stroke-width="0.5"/>
+<text x="418" y="62" font-size="13" font-weight="500" fill="#633806" text-anchor="middle" dominant-baseline="central">softmax(-1)</text>
+<text x="418" y="84" font-size="12.5" font-family="var(--font-mono)" fill="#854F0B" text-anchor="middle" dominant-baseline="central">(B, N, N)</text>
+
+<rect x="513" y="40" width="125" height="64" rx="9" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+<text x="575" y="62" font-size="13" font-weight="500" fill="#085041" text-anchor="middle" dominant-baseline="central">attn @ V</text>
+<text x="575" y="84" font-size="12.5" font-family="var(--font-mono)" fill="#0F6E56" text-anchor="middle" dominant-baseline="central">(B, N, d_k)</text>
+</g>
+
+<g fill="none" stroke="#888780" stroke-width="1.5">
+<path d="M167 72 L195 72" marker-end="url(#a1)"/>
+<path d="M324 72 L352 72" marker-end="url(#a1)"/>
+<path d="M481 72 L509 72" marker-end="url(#a1)"/>
+</g>
+
+<text x="340" y="132" font-family="var(--font-sans)" font-size="12.5" fill="#5F5E5A" text-anchor="middle" dominant-baseline="central">两端形状相同，中间冒出 N×N 方阵 —— 这就是 attention 的全部内容</text>
+</svg>
+<figcaption><b>图 1</b>　形状流转。中间那个 N×N 方阵是唯一「新出现」的东西，N 个 token 互相打分，所以是 N² 个组合。</figcaption>
+</figure>
+
+<p>为什么是 N×N？因为「每个 token 都要看每个 token」，N 个看 N 个，就是 N² 个组合。这也是 attention 计算量随序列长度<strong>平方增长</strong>的原因——N 翻倍，这个矩阵大 4 倍。</p>
+
+<hr>
+
+<h2 id="s2"><span class="num">2</span>用真实数字走一遍</h2>
+
+<p>固定随机种子，<code>B=1, N=3, d_k=4</code>。</p>
+
+<h3>输入（每个 token 用 4 个数字表示）</h3>
+
+<pre>Q =
+   +0.803  +0.175  +0.089  -0.614        <span class="c">&lt;- token 0 的提问</span>
+   +0.046  -1.368  +0.337  +1.011        <span class="c">&lt;- token 1 的提问</span>
+   -1.435  +0.977  +0.522  +1.238        <span class="c">&lt;- token 2 的提问</span>
+
+K =
+   -0.865  +0.299  +0.419  -0.080        <span class="c">&lt;- token 0 的标签</span>
+   +0.926  +0.816  +0.495  -0.164        <span class="c">&lt;- token 1 的标签</span>
+   -0.678  -1.059  +0.748  +0.239        <span class="c">&lt;- token 2 的标签</span></pre>
+
+<h3>① 打分 scores = Q @ K^T，形状 (1, 3, 3)</h3>
+
+<pre>   -0.556  +1.032  -0.810
+   -0.388  -1.072  +1.912
+   +1.653  -0.477  +0.624</pre>
+
+<p>读第一行：token 0 给 token 0 打 −0.556，给 token 1 打 +1.032，给 token 2 打 −0.810。分数越高说明「token 0 的提问」和「那个 token 的标签」越合拍。</p>
+
+<h3>② 缩放，除以 √4 = 2</h3>
+
+<pre>   -0.278  +0.516  -0.405
+   -0.194  -0.536  +0.956
+   +0.827  -0.239  +0.312</pre>
+
+<h3>③ softmax(dim=-1)，形状 (1, 3, 3)</h3>
+
+<pre>   +0.244  +0.540  +0.215          <span class="ok">每行求和 = 1.0</span>
+   +0.205  +0.146  +0.649          <span class="ok">每行求和 = 1.0</span>
+   +0.515  +0.177  +0.308          <span class="ok">每行求和 = 1.0</span></pre>
+
+<p>读第一行：token 0 把 24.4% 的注意力给了自己，54.0% 给了 token 1，21.5% 给了 token 2。</p>
+
+<figure>
+<svg viewBox="0 0 680 196" width="100%" role="img" xmlns="http://www.w3.org/2000/svg">
+<title>分数矩阵经过 softmax 变成每行和为 1 的权重</title>
+<desc>左边是三乘三的缩放后分数，经过 softmax 得到右边每行和为 1 的注意力权重。</desc>
+<defs>
+<marker id="a2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+<path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</marker>
+</defs>
+
+<g font-family="var(--font-sans)" font-size="12.5" fill="#5F5E5A" text-anchor="middle">
+<text x="202" y="28" dominant-baseline="central">分数（缩放后）</text>
+<text x="492" y="28" dominant-baseline="central">注意力权重</text>
+</g>
+
+<g font-family="var(--font-sans)" font-size="12" fill="#5F5E5A" text-anchor="end">
+<text x="92" y="67" dominant-baseline="central">token 0</text>
+<text x="92" y="107" dominant-baseline="central">token 1</text>
+<text x="92" y="147" dominant-baseline="central">token 2</text>
+</g>
+
+<g font-family="var(--font-mono)" font-size="12.5" fill="#33322B" text-anchor="middle">
+<rect x="100" y="50" width="68" height="34" fill="#F5F4EF" stroke="#E5E3DA" stroke-width="0.5"/>
+<text x="134" y="67" dominant-baseline="central">-0.278</text>
+<rect x="168" y="50" width="68" height="34" fill="#F5F4EF" stroke="#E5E3DA" stroke-width="0.5"/>
+<text x="202" y="67" dominant-baseline="central">+0.516</text>
+<rect x="236" y="50" width="68" height="34" fill="#F5F4EF" stroke="#E5E3DA" stroke-width="0.5"/>
+<text x="270" y="67" dominant-baseline="central">-0.405</text>
+
+<rect x="100" y="90" width="68" height="34" fill="#F5F4EF" stroke="#E5E3DA" stroke-width="0.5"/>
+<text x="134" y="107" dominant-baseline="central">-0.194</text>
+<rect x="168" y="90" width="68" height="34" fill="#F5F4EF" stroke="#E5E3DA" stroke-width="0.5"/>
+<text x="202" y="107" dominant-baseline="central">-0.536</text>
+<rect x="236" y="90" width="68" height="34" fill="#F5F4EF" stroke="#E5E3DA" stroke-width="0.5"/>
+<text x="270" y="107" dominant-baseline="central">+0.956</text>
+
+<rect x="100" y="130" width="68" height="34" fill="#F5F4EF" stroke="#E5E3DA" stroke-width="0.5"/>
+<text x="134" y="147" dominant-baseline="central">+0.827</text>
+<rect x="168" y="130" width="68" height="34" fill="#F5F4EF" stroke="#E5E3DA" stroke-width="0.5"/>
+<text x="202" y="147" dominant-baseline="central">-0.239</text>
+<rect x="236" y="130" width="68" height="34" fill="#F5F4EF" stroke="#E5E3DA" stroke-width="0.5"/>
+<text x="270" y="147" dominant-baseline="central">+0.312</text>
+</g>
+
+<path d="M310 107 L378 107" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#a2)"/>
+<text x="344" y="88" font-family="var(--font-sans)" font-size="12" fill="#5F5E5A" text-anchor="middle" dominant-baseline="central">softmax</text>
+
+<g font-family="var(--font-mono)" font-size="12.5" fill="#085041" text-anchor="middle">
+<rect x="390" y="50" width="68" height="34" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+<text x="424" y="67" dominant-baseline="central">0.244</text>
+<rect x="458" y="50" width="68" height="34" fill="#5DCAA5" stroke="#0F6E56" stroke-width="0.5"/>
+<text x="492" y="67" dominant-baseline="central">0.540</text>
+<rect x="526" y="50" width="68" height="34" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+<text x="560" y="67" dominant-baseline="central">0.215</text>
+
+<rect x="390" y="90" width="68" height="34" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+<text x="424" y="107" dominant-baseline="central">0.205</text>
+<rect x="458" y="90" width="68" height="34" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+<text x="492" y="107" dominant-baseline="central">0.146</text>
+<rect x="526" y="90" width="68" height="34" fill="#5DCAA5" stroke="#0F6E56" stroke-width="0.5"/>
+<text x="560" y="107" dominant-baseline="central">0.649</text>
+
+<rect x="390" y="130" width="68" height="34" fill="#5DCAA5" stroke="#0F6E56" stroke-width="0.5"/>
+<text x="424" y="147" dominant-baseline="central">0.515</text>
+<rect x="458" y="130" width="68" height="34" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+<text x="492" y="147" dominant-baseline="central">0.177</text>
+<rect x="526" y="130" width="68" height="34" fill="#9FE1CB" stroke="#0F6E56" stroke-width="0.5"/>
+<text x="560" y="147" dominant-baseline="central">0.308</text>
+</g>
+
+<g font-family="var(--font-mono)" font-size="12" fill="#0F6E56" text-anchor="start">
+<text x="602" y="67" dominant-baseline="central">= 1.0</text>
+<text x="602" y="107" dominant-baseline="central">= 1.0</text>
+<text x="602" y="147" dominant-baseline="central">= 1.0</text>
+</g>
+</svg>
+<figcaption><b>图 2</b>　左边是缩放后的分数，右边是 softmax 之后的权重。颜色越深权重越大。注意右边每一行的三个数加起来都是 1——这就是「注意力分配」的含义。</figcaption>
+</figure>
+
+<h3>④ out = attn @ V，形状 (1, 3, 4)</h3>
+
+<pre>   -0.782  -0.300  +0.083  +0.311
+   +0.002  -0.053  +0.650  +1.022
+   -0.320  -0.030  -0.169  +0.681</pre>
+
+<p><strong>手算校验第一行</strong>，证明这一步就是加权平均：</p>
+
+<pre>0.244 × v0 + 0.540 × v1 + 0.215 × v2 = [-0.782418, -0.30042, 0.083039, 0.311184]
+程序算出的 out[0, 0]                  = [-0.782418, -0.30042, 0.083039, 0.311184]</pre>
+
+<div class="callout green">
+  <p>完全一致。<strong><code>out</code> 的每一行，就是 <code>V</code> 按权重搅出来的一杯混合果汁。</strong>权重不同，混合比例不同。</p>
+</div>
+
+<hr>
+
+<h2 id="s3"><span class="num">3</span>逐行讲你的代码</h2>
+
+<h3><code>d_k = Q.size(-1)</code></h3>
+
+<p><code>Q</code> 是 <code>(B, N, d_k)</code>，<code>size(-1)</code> 取最后一个维度，就是 <code>d_k</code>。</p>
+
+<p>为什么用 <code>size(-1)</code> 而不是写死 64？因为这个函数不知道外面用的是多大的 <code>d_k</code>，得从输入现读。这也是为什么函数能同时服务 <code>d_k=64</code> 的 ViT 和 <code>d_k=4</code> 的玩具例子。</p>
+
+<h3><code>scores = torch.matmul(Q, K.transpose(-2, -1))</code></h3>
+
+<p>这是全篇最关键的一行，分两半看。</p>
+
+<p><strong>先看 <code>K.transpose(-2, -1)</code></strong>：把 <code>K</code> 的最后两维交换。</p>
+
+<pre>(B, N, d_k)  --transpose(-2,-1)-->  (B, d_k, N)
+(1, 3, 4)    ------------------>   (1, 4, 3)</pre>
+
+<p><strong>再看 <code>matmul</code></strong>：</p>
+
+<pre>(B, N, d_k) @ (B, d_k, N)
+   (1, 3, 4) @ (1, 4, 3)  ->  (1, 3, 3)</pre>
+
+<p>矩阵乘法的规则是「前面的列数 = 后面的行数」，两边都是 <code>d_k=4</code>，所以能乘。乘完 <code>d_k</code> 被消掉，剩下两个 <code>N</code>，就是那个 N×N 方阵。</p>
+
+<p><strong>为什么必须转置？</strong>不转置就是 <code>(1,3,4) @ (1,3,4)</code>，列数 4 和行数 3 对不上，直接报错。转置不只是为了凑形状——它把「比对」这件事表达出来了：<code>Q</code> 的每一行去乘 <code>K</code> 的每一行，得到的就是两个 token 的相似度。</p>
+
+<div class="callout">
+  <span class="tag2">为 D4 埋的伏笔</span>
+  <p>用 <code>-2, -1</code> 而不是 <code>1, 2</code> 的原因：万一以后加了 head 维变成 <code>(B, h, N, d_k)</code>，<code>-2, -1</code> 依然正确，写 <code>1, 2</code> 就错了。你的写法已经为 D4 的多头做好了准备。</p>
+</div>
+
+<h3><code>scores = scores / math.sqrt(d_k)</code></h3>
+
+<p>分数是 <code>d_k</code> 项相乘再相加得到的。项数越多，加出来的数越容易偏大。</p>
+
+<p>偏大会坏事：<code>softmax</code> 会把大数放大成 1、小的压成 0，权重退化成「只看一个」，而且梯度几乎传不回去，训练不动。除以 <code>√d_k</code> 把分数拉回正常范围。</p>
+
+<p><strong>为什么是 <code>√d_k</code> 不是 <code>d_k</code>？</strong>因为算出来的分数，波动幅度大约就是 <code>√d_k</code> 这个量级（方差是 <code>d_k</code>，标准差是 <code>√d_k</code>），要除就除标准差。</p>
+
+<p>具体的实测数字（不缩放会退化成 <code>100% / 0% / 0%</code>）在 <code>attention_math.md</code> 第 3 节。</p>
+
+<h3><code>if mask is not None: scores = scores.masked_fill(mask, float('-inf'))</code></h3>
+
+<p><code>masked_fill(mask, value)</code> 的作用是：<strong><code>mask</code> 里为 <code>True</code> 的位置，把值换成 <code>value</code>。</strong></p>
+
+<p>你的 <code>mask</code> 语义是「<code>True</code> = 屏蔽掉」。这个约定必须记牢，因为反过来写不会报错，只会算错——实测反着写会直接出 <code>NaN</code>。</p>
+
+<p>填 <code>-inf</code> 的原因：<code>softmax</code> 里 <code>exp(-inf) = 0</code>，所以被屏蔽的位置权重严格为 0，等于「看不见它」。</p>
+
+<p><strong>为什么必须在 <code>softmax</code> 之前？</strong>因为 <code>softmax</code> 要保证每行和为 1。如果在 <code>softmax</code> 之后再把某些位置清零，行和就不再是 1 了。实测（<code>N=3</code>，causal）：</p>
+
+<pre>加在 softmax 之前（你的做法）：行和 = [1.0, 1.0, 1.0]
+加在 softmax 之后（错误做法）：行和 = [0.099, 0.519, 0.577, ...]   <span class="hi">&lt;- 不再是 1</span></pre>
+
+<p>行和不是 1，就意味着「注意力总量」不守恒，后面的加权平均失去意义。</p>
+
+<figure>
+<svg viewBox="0 0 680 196" width="100%" role="img" xmlns="http://www.w3.org/2000/svg">
+<title>causal mask 的形状与对应的注意力权重</title>
+<desc>三乘三的因果掩码中，每个位置只能看到自己和它前面的位置，第一行只能看自己所以权重是一，第二行分给前两个位置。</desc>
+
+<g font-family="var(--font-sans)" font-size="12.5" fill="#5F5E5A" text-anchor="middle">
+<text x="236" y="28" dominant-baseline="central">causal mask</text>
+<text x="510" y="28" dominant-baseline="central">注意力权重</text>
+</g>
+
+<g font-family="var(--font-sans)" font-size="12" fill="#5F5E5A" text-anchor="end">
+<text x="132" y="63" dominant-baseline="central">token 0</text>
+<text x="132" y="108" dominant-baseline="central">token 1</text>
+<text x="132" y="153" dominant-baseline="central">token 2</text>
+</g>
+
+<g font-family="var(--font-sans)" font-size="12" text-anchor="middle">
+<rect x="140" y="45" width="64" height="36" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+<text x="172" y="63" fill="#085041" dominant-baseline="central">保留</text>
+<rect x="204" y="45" width="64" height="36" fill="#F1EFE8" stroke="#D3D1C7" stroke-width="0.5"/>
+<text x="236" y="63" fill="#B4B2A9" dominant-baseline="central">屏蔽</text>
+<rect x="268" y="45" width="64" height="36" fill="#F1EFE8" stroke="#D3D1C7" stroke-width="0.5"/>
+<text x="300" y="63" fill="#B4B2A9" dominant-baseline="central">屏蔽</text>
+
+<rect x="140" y="90" width="64" height="36" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+<text x="172" y="108" fill="#085041" dominant-baseline="central">保留</text>
+<rect x="204" y="90" width="64" height="36" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+<text x="236" y="108" fill="#085041" dominant-baseline="central">保留</text>
+<rect x="268" y="90" width="64" height="36" fill="#F1EFE8" stroke="#D3D1C7" stroke-width="0.5"/>
+<text x="300" y="108" fill="#B4B2A9" dominant-baseline="central">屏蔽</text>
+
+<rect x="140" y="135" width="64" height="36" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+<text x="172" y="153" fill="#085041" dominant-baseline="central">保留</text>
+<rect x="204" y="135" width="64" height="36" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+<text x="236" y="153" fill="#085041" dominant-baseline="central">保留</text>
+<rect x="268" y="135" width="64" height="36" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+<text x="300" y="153" fill="#085041" dominant-baseline="central">保留</text>
+</g>
+
+<g font-family="var(--font-mono)" font-size="12.5" fill="#085041" text-anchor="start">
+<text x="366" y="63" dominant-baseline="central">[1.000, 0.000, 0.000]</text>
+<text x="366" y="108" dominant-baseline="central">[0.585, 0.415, 0.000]</text>
+<text x="366" y="153" dominant-baseline="central">[0.515, 0.177, 0.308]</text>
+</g>
+<text x="366" y="182" font-family="var(--font-sans)" font-size="12" fill="#A32D2D" dominant-baseline="central">第一行只能看自己，所以权重是 1.000</text>
+</svg>
+<figcaption><b>图 3</b>　causal mask 让第 i 个位置只能看到 j ≤ i。第一行除了自己全被屏蔽，所以权重变成 1.000——这就是「不能偷看未来」的含义。</figcaption>
+</figure>
+
+<h3><code>attn = F.softmax(scores, dim=-1)</code></h3>
+
+<p><code>dim=-1</code> 作用在最后一维，也就是那 N 个 key 上，让<strong>每一行</strong>加起来等于 1。</p>
+
+<p>为什么是最后一维？因为权重的定义是「第 i 个 query 把多少比例的注意力分给第 j 个 key」。固定 i（即固定一行），在所有 j 上分配完，所以要在 j 这一维上归一化——而 j 正是最后一维。</p>
+
+<div class="callout red">
+  <span class="tag2">最容易写错且最难发现</span>
+  <p>如果写成 <code>dim=-2</code>，程序照样跑完、loss 照样下降，但归一化方向变成了「每列和为 1」，和定义正好正交。它不会报错，因为形状完全合法。</p>
+  <p>防御手段是一行断言：<br>
+  <code>assert torch.allclose(attn.sum(-1), torch.ones_like(attn.sum(-1)), atol=1e-6)</code></p>
+</div>
+
+<h3><code>if dropout &gt; 0.0: attn = F.dropout(attn, p=dropout, training=trainning)</code></h3>
+
+<p>dropout 加在<strong>「softmax 之后、<code>@ V</code> 之前」</strong>，也就是作用在权重矩阵上。这是论文里的标准位置，实测和官方实现完全一致（同一个种子下 <code>p=0.3</code> 最大差 <code>0.000e+00</code>）。</p>
+
+<p>作用是什么：训练时随机把一部分权重置零，逼模型不要依赖某几个固定的 token。</p>
+
+<p><code>training=trainning</code> 这个参数决定了 eval 时要不要丢。<code>F.dropout</code> 在 <code>training=False</code> 时<strong>直接直通、不做任何处理</strong>，所以推理阶段权重不会被破坏。实测 <code>training=False</code> 时输出与完全不传 dropout 完全一致。</p>
+
+<h3><code>out = torch.matmul(attn, V)</code></h3>
+
+<pre>(B, N, N) @ (B, N, d_k)  ->  (B, N, d_k)
+  (1, 3, 3) @ (1, 3, 4)  ->  (1, 3, 4)</pre>
+
+<p><code>attn</code> 的每一行是一组权重，<code>V</code> 的每一行是一个 token 的内容。矩阵乘法在这里的含义就是「按权重求和」，所以结果回到了 <code>(B, N, d_k)</code>，形状和输入一样，可以继续往下一层传。</p>
+
+<hr>
+
+<h2 id="s4"><span class="num">4</span>三处建议改的地方</h2>
+
+<h3>4.1 参数名拼写：<code>trainning</code> → <code>training</code></h3>
+
+<p><code>trainning</code> 多了一个 <code>n</code>。现在不影响运行，因为默认值是 <code>True</code>，不传就没事。但只要有人（包括三个月后的你自己）按 PyTorch 的习惯写 <code>training=False</code>，就会直接报错：</p>
+
+<pre>TypeError: scaled_dot_product_attention() got an unexpected keyword argument 'training'</pre>
+
+<p>D3 之后要接 <code>nn.Module</code>，那时候会用 <code>self.training</code>，这个名字必须是对的。</p>
+
+<h3>4.2 <code>float('-inf')</code> 在「整行被屏蔽」时会出 <code>NaN</code></h3>
+
+<p><code>-inf</code> 本身没问题，causal mask 下也不会出问题（第 0 行总保留了自己）。但如果某个位置<strong>整行都被屏蔽</strong>，<code>softmax</code> 会算出 <code>-inf - (-inf) = NaN</code>，然后 NaN 会沿着后面的计算一路扩散。</p>
+
+<p>实测：</p>
+
+<pre>他的写法 float('-inf')   -&gt; 输出含 NaN: <span class="hi">True</span>
+改用 finfo.min           -&gt; 输出含 NaN: <span class="ok">False</span>
+官方 SDPA 同样输入        -&gt; 输出含 NaN: <span class="ok">False</span></pre>
+
+<p>什么时候会整行被屏蔽？<strong>padding mask</strong>。一批句子里长短不一，短的用 pad 补齐，如果某个位置本身是 pad 且要求它不看任何东西，就会出现整行屏蔽。T1 用的是固定尺寸图片，暂时碰不到；但这是个真实的坑，D3 补 padding mask 时会遇到。</p>
+
+<p>改法：</p>
+
+<pre>scores = scores.masked_fill(mask, torch.finfo(scores.dtype).min)</pre>
+
+<p>用当前 dtype 能表示的最小有限数，避免 <code>-inf</code> 参与运算。顺便注意 <code>float('-inf')</code> 在 float16 下也容易出问题，<code>finfo</code> 会自动跟着 dtype 走。</p>
+
+<h3>4.3 docstring 过时 + 步骤编号重复</h3>
+
+<ul>
+  <li>docstring 里写 <code>mask: D2 暂不处理, 留到 D3 加 causal / padding mask</code>，但你实际上已经实现了 mask。这行该更新了，不然三个月后你会以为它没实现。</li>
+  <li>docstring 里写的参数名是 <code>dropout_p</code>，实际参数名是 <code>dropout</code>。</li>
+  <li>注释编号有两个 <code>3.</code>（「施加 mask」和「归一化」），改成 <code>3.</code> 和 <code>4.</code>。</li>
+</ul>
+
+<hr>
+
+<h2 id="s5"><span class="num">5</span>怎么确认自己真的懂了</h2>
+
+<h3>第一条，加断言</h3>
+
+<p>在 <code>softmax</code> 后面加那行 <code>attn.sum(-1)</code> 的断言。成本一行，能挡掉最难发现的静默 bug。</p>
+
+<h3>第二条，自己手算一行</h3>
+
+<p>拿上面那组数字，用纸笔算一遍 <code>out[0, 0]</code>：</p>
+
+<pre>0.244 × v0 + 0.540 × v1 + 0.215 × v2</pre>
+
+<p>算出来应该等于 <code>[-0.782, -0.300, +0.083, +0.311]</code>。手算对得上，说明你真的理解了「加权平均」这一步，而不是记住了代码。</p>
+
+<h3>第三条，做破坏性实验</h3>
+
+<p>把某一行的代码改坏，看误差会不会炸：</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>改动</th><th>预期现象</th></tr></thead>
+<tbody>
+<tr><td>删掉 <code>scores / math.sqrt(d_k)</code></td><td>误差变大，权重变尖锐</td></tr>
+<tr><td><code>dim=-1</code> 改成 <code>dim=-2</code></td><td>误差很大，且不报错</td></tr>
+<tr><td>mask 语义反着写</td><td>直接出 NaN</td></tr>
+<tr><td>mask 从 softmax 前挪到 softmax 后</td><td>行和不再为 1</td></tr>
+</tbody>
+</table>
+</div>
+
+<p><strong>改坏之后误差不动，说明你的测试没有覆盖到那个分支</strong>——这本身就是重要的信息。</p>
+
+<h3>第四条，给 <code>test.py</code> 补两个用例</h3>
+
+<p>现在只测了无 mask 和 causal。还缺：</p>
+
+<ul>
+  <li><strong>dropout 用例</strong>：固定种子，对比官方 <code>dropout_p</code>，验证 dropout 位置对不对（你的实现是对的，实测差 0，但值得让它进测试）</li>
+  <li><strong>整行屏蔽用例</strong>：验证 4.2 里那个 NaN 问题</li>
+</ul>
+
+<hr>
+
+<h2 id="s6"><span class="num">6</span>和任务书对一下进度</h2>
+
+<h3>D2 要求</h3>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>要求</th><th>状态</th></tr></thead>
+<tbody>
+<tr class="hl"><td>手写 <code>scaled_dot_product_attention(Q,K,V,mask=None)</code></td><td>已完成</td></tr>
+<tr class="hl"><td>缩放 + <code>softmax(-1)</code></td><td>已完成</td></tr>
+<tr class="hl"><td>函数能跑、输出 shape 正确</td><td>已完成，<code>(1,3,4)</code></td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>D3 要求</h3>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>要求</th><th>状态</th></tr></thead>
+<tbody>
+<tr class="hl"><td>加 dropout（train/eval 切换）</td><td>代码已写，测试还没覆盖</td></tr>
+<tr class="hl"><td>加 causal mask</td><td>已完成，误差 0</td></tr>
+<tr class="hl"><td>与官方对齐，max abs err &lt; 1e-5</td><td>已完成，实测 <code>0.000e+00</code></td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="callout green">
+  <p><strong>D3 实际已经做完了</strong>，只差把 dropout 和边界情况写进 <code>test.py</code>。做完就可以直接进 D4 的多头。</p>
+</div>
+
+<p>D4 要用到的两个接口，你这版已经具备：</p>
+
+<ul>
+  <li><code>Q</code> 的最后一维是 <code>d_k</code>，多头拆完之后每个头的 <code>d_head</code> 直接传进来就行</li>
+  <li><code>mask</code> 参数已经预留，多头下 mask 需要 <code>unsqueeze</code> 出 head 维（<code>(N,N)</code> → <code>(1,1,N,N)</code>），广播会自动处理</li>
+</ul>
+
+<footer>
+  T1 · Transformer 手写与 ViT/DeiT 迁移对照　|　讲解对象 attention.py　|　源文件 notes/attention_walkthrough.md
+</footer>
+
+</main>
+
+<button id="printBtn" onclick="window.print()">导出 PDF</button>
+
+</body>
+</html>
