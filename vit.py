@@ -1,7 +1,8 @@
 import math                        # 数学函数: log() 等
 import torch                       # 张量运算
-import torch.nn as nn              # nn.Module / nn.Parameter
-import torch.nn.functional as F    # 预留 (本文件暂未用)
+import torch.nn as nn              # nn.Module / nn.Parameter / 各层
+import torch.nn.functional as F    # 预留 (本文件暂未使用)
+from attention import MultiHeadAttention   # 复用 W1 手写的多头注意力
 
 
 def positional_encoding(max_len, d_model):
@@ -60,3 +61,103 @@ class LearnablePositionalEncoding(nn.Module):
         # x: (B, N, d_model)
         # pose_embed[:, :N, :]: 取前 N 个位置 -> (1, N, d_model); 与 x 相加按第 0 维广播
         return x + self.pose_embed[:, :x.shape[1], :]
+
+
+class MLP(nn.Module):
+    """
+    位置无关前馈层 (Position-wise Feed-Forward)
+    结构: Linear(d_model -> hidden) -> GELU -> Linear(hidden -> d_model), 逐 token 独立
+
+    参数:
+        d_model (int)    : 输入/输出维度
+        mlp_ratio (float): 隐藏维倍数, hidden = int(d_model * mlp_ratio), ViT 常规 4.0
+        dropout (float)  : dropout 概率 (对齐官方时为 0.0)
+    返回:
+        (B, N, d_model)
+    """
+
+    def __init__(self, d_model, mlp_ratio=4.0, dropout=0.0):
+        # super().__init__(): 调父类初始化, 建立参数自动登记机制 (必须)
+        super().__init__()
+        # int(...): nn.Linear 的维度必须是整数, 显式取整
+        hidden = int(d_model * mlp_ratio)         # 隐藏维 (提高维度), 如 384*4 = 1536
+        self.fc1 = nn.Linear(d_model, hidden)     # 升维: d_model -> hidden
+        self.act = nn.GELU()                      # 激活: 逐元素, ViT 采用 GELU
+        self.fc2 = nn.Linear(hidden, d_model)     # 降维: hidden -> d_model
+        self.dropout = nn.Dropout(dropout)        # 训练时随机置零, eval() 自动直通; p=0 恒等
+
+    def forward(self, x):
+        # x: (B, N, d_model)
+        x = self.fc1(x)         # (B, N, hidden)
+        x = self.act(x)         # 逐元素 GELU, shape 不变
+        x = self.dropout(x)
+        x = self.fc2(x)         # (B, N, d_model)
+        x = self.dropout(x)
+        return x                # (B, N, d_model)
+
+
+class LayerScale(nn.Module):
+    """
+    逐通道缩放 (对应 timm ViT block 的 ls1 / ls2)
+    公式: y = gamma * x,  gamma 为可学习的逐通道系数
+    init_values=1.0 时等价于恒等 (乘 1)
+
+    参数:
+        dim (int)          : 通道数 (= d_model)
+        init_values (float): gamma 初值
+    返回:
+        与输入同 shape
+    """
+
+    def __init__(self, dim, init_values=1.0):
+        super().__init__()
+        # nn.Parameter(t): 标记为可训练参数 (会被 model.parameters() 收集)
+        # torch.ones((dim)): 全 1 向量; 外层括号只是分组, 等价于 torch.ones(dim)
+        # * init_values 设定初值
+        # 形状 (dim,): 与 (B,N,dim) 相乘时按最右维广播 (广播口诀: 1 放最左或直接省略)
+        self.gamma = nn.Parameter(init_values * torch.ones((dim)))
+
+    def forward(self, x):
+        # x: (B, N, d_model)
+        return self.gamma * x      # (dim,) 广播乘 (B,N,dim) -> (B,N,d_model)
+
+
+class ViTEncoderBlock(nn.Module):
+    """
+    ViT Encoder Block (pre-LN)
+    公式:
+        x = x + ls1( Attn( LN(x) ) )
+        x = x + ls2( MLP ( LN(x) ) )
+    注意: LN 在子层之前 (pre-LN); 写反成 post-LN(LN(x+Sublayer(x))) 会与 timm 差 0.1 量级
+
+    参数:
+        d_model (int)      : token 维度
+        num_heads (int)    : 注意力头数
+        mlp_ratio (float)  : MLP 隐藏维倍数
+        dropout (float)    : dropout 概率 (对齐时 0.0)
+        init_values (float): LayerScale 初值
+    返回:
+        (B, N, d_model)
+    """
+
+    def __init__(self, d_model, num_heads, mlp_ratio=4.0, dropout=0.0, init_values=1.0):
+        super().__init__()
+
+        # ── 子层 1: 多头注意力 ──
+        self.norm1 = nn.LayerNorm(d_model)                       # LN 放在 Attn 之前 (pre-LN 关键)
+        # 复用 W1 的 MultiHeadAttention; 第 3 个位置参数即 dropout
+        self.attn = MultiHeadAttention(d_model, num_heads, dropout)
+        self.ls1 = LayerScale(d_model, init_values)              # 对应 timm 的 ls1
+
+        # ── 子层 2: MLP ──
+        self.norm2 = nn.LayerNorm(d_model)                       # LN 放在 MLP 之前
+        self.mlp = MLP(d_model, mlp_ratio, dropout)
+        self.ls2 = LayerScale(d_model, init_values)              # 对应 timm 的 ls2
+
+    def forward(self, x):
+        # x: (B, N, d_model)
+        # 子层1: LN -> Attn -> ls1 -> 残差相加 (顺序不能乱)
+        x = x + self.ls1(self.attn(self.norm1(x)))               # (B, N, d_model)
+        # 子层2: LN -> MLP -> ls2 -> 残差相加
+        x = x + self.ls2(self.mlp(self.norm2(x)))                # (B, N, d_model)
+        return x                                                 # (B, N, d_model)
