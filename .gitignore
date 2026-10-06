@@ -22,3 +22,8 @@ data/
 # 探索性/临时测试脚本 (只留本地, 不入库)
 test.py
 test_*.py
+
+# 二进制中间产物 (无法 diff; --save-detail 的 confusion.npy 不入库,
+# 同信息的逐类 recall/precision/f1 已落在 results/*_perclass.csv 文本里)
+*.npy
+*.npz
