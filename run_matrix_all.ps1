@@ -1,0 +1,185 @@
+<#
+L1 — 批跑启动器 (W4 用, 支持两批)
+
+用途:
+    顺序调用 `run_matrix.py` 跑完一批实验, 全程输出重定向到 logs/ 下的单个日志文件,
+    支持后台运行 + 随时 tail 查看。本身不做训练/落盘逻辑, 只做编排 (与 run_matrix.py 职责不重叠)。
+
+    -Phase main  : 主矩阵 18 组 = {r50,vits,deitt} × {Z0,Z1,Z2} × {25,100}, seed 42   [已完成 2026-10-06]
+    -Phase extra : W4 两条"允许的加跑" 13 组 =
+                   ① 50% 档 9 组 = {r50,vits,deitt} × {Z0,Z1,Z2} × {50}        (计划书允许的顺手加跑)
+                   ② vits1k 起点消融 4 组 = vits1k × {Z1,Z2} × {25,100}          (口径 4, 必须在 W4 内跑)
+
+输入:
+    参数 -Phase ("main" | "extra"), 默认 main。组清单写死在下面的「矩阵定义」分节, 便于改档位后重跑。
+输出:
+    - `logs/matrix_<时间戳>.log`   本次批跑的完整终端输出 (每组一段)
+    - `results/{eid}.json`         每组明细 (由 run_matrix.py 落盘)
+    - `results/{eid}_history.csv`  逐 epoch 曲线 (Z0 档无, 属正常)
+    - `experiments.csv`            26 列汇总表, 追加本批行数 (表头由第一组自动创建)
+
+跑完应看到的自检数字:
+    - main (2026-10-06 实测): `done=18 failed=0`, 耗时 95.96 min, `experiments.csv` 19 行
+    - extra (预期):            `done=13 failed=0`, 耗时 ~63 min, `experiments.csv` 32 行
+      extra 逐组预估 (依据主矩阵实测: 耗时主要由 epoch 数决定, 而非模型大小):
+        Z0 × 3 档 50%        秒级 (r50 0.25 / vits 0.6 / deitt 0.5 min)
+        vits1k Z1/Z2 × {100,25}   4 组 ≈ 18 min     (计划书给的量级)
+        50% 档 Z1/Z2 × 3 架构     6 组 ≈ 45 min     (r50 各 ~5.8 / vits 各 ~6.0 / deitt 各 ~9.5)
+
+怎么验证跑对了:
+    1) `(Get-ChildItem results\*.json | Where-Object Name -notlike "*-dry*").Count` -> 31 (18 + 13)
+    2) `(Import-Csv experiments.csv).Count` -> 31, 每行 26 列
+    3) 日志末尾应打印 `[batch] done=13 skipped=0 failed=0`
+    4) `vits1k` 那 4 组的 `preproc` 列应为 `vit_small/augreg_in1k/0.5-0.5` (与 vits 的 21k+1k 区分)
+    5) 中断后续跑: 重跑本脚本, 已完成的组打印 `[skip]` 而不重新训练 (断点续跑)
+#>
+
+param(
+    # 变量 Phase: str, 选哪一批
+    #   示例值: "extra"
+    #   为什么用参数而非两个脚本: 两批共用同一套前置检查/断点续跑/日志逻辑, 避免复制粘贴导致行为漂移
+    [ValidateSet("main", "extra")]
+    [string]$Phase = "main"
+)
+
+$ErrorActionPreference = "Continue"
+
+# ==== 1. 常量与路径 ====
+# 变量 PY: str, 训练用的解释器绝对路径
+#   示例值: "D:/anaconda/envs/pytorch/python.exe"
+#   为什么写死绝对路径: 批跑在后台无人值守, 不能依赖 conda activate 的 shell 状态
+$PY = "D:/anaconda/envs/pytorch/python.exe"
+
+# 变量 ROOT: str, 项目根
+#   示例值: "d:/learning project/T1 transformer and ViT"
+#   为什么用绝对路径: 脚本可能被从任意目录调用, 相对路径会让 results/ 落到别处
+$ROOT = "d:/learning project/T1 transformer and ViT"
+
+# 变量 SEED: int, 全局随机种子
+#   示例值: 42
+#   为什么: 全周固定同一个种子, 组间差异才能归因于架构/策略/数据量而非随机性 (口径 15)
+$SEED = 42
+
+$LOG_DIR = Join-Path $ROOT "logs"
+$STAMP = Get-Date -Format "yyyyMMdd_HHmmss"
+$LOG = Join-Path $LOG_DIR "matrix_$Phase`_$STAMP.log"
+
+# ==== 2. 矩阵定义 ====
+# 设计决策: 用 "arch,mode,tier" 字符串列表显式声明每一组, 而不是嵌套 for 循环
+#   为什么: ① 组顺序可以按"便宜的先跑"手工排 (早期就能暴露问题);
+#           ② 清单能与计划书的「逐组清单」逐行对上, 便于审计;
+#           ③ extra 批的 13 组无法用规则的笛卡尔积表达 (50% 档 9 组 + vits1k 4 组)
+$MAIN_LIST = @(
+    "r50,Z0,25",   "r50,Z0,100",   "r50,Z1,25",   "r50,Z1,100",   "r50,Z2,25",   "r50,Z2,100",
+    "vits,Z0,25",  "vits,Z0,100",  "vits,Z1,25",  "vits,Z1,100",  "vits,Z2,25",  "vits,Z2,100",
+    "deitt,Z0,25", "deitt,Z0,100", "deitt,Z1,25", "deitt,Z1,100", "deitt,Z2,25", "deitt,Z2,100"
+)
+
+$EXTRA_LIST = @(
+    # —— ① 50% 档 9 组 (先跑 3 个 Z0, 秒级即可确认 50% 子集能正常加载) ——
+    "r50,Z0,50", "vits,Z0,50", "deitt,Z0,50",
+    # —— ② vits1k 起点消融 4 组 (口径 4: 把"预训练数据量"这一混杂量化出来) ——
+    "vits1k,Z1,100", "vits1k,Z2,100", "vits1k,Z1,25", "vits1k,Z2,25",
+    # —— ③ 50% 档的 6 个训练组 (最贵的放最后, 前面出错能早停) ——
+    "r50,Z1,50", "r50,Z2,50",
+    "vits,Z1,50", "vits,Z2,50",
+    "deitt,Z1,50", "deitt,Z2,50"
+)
+
+$LIST = if ($Phase -eq "main") { $MAIN_LIST } else { $EXTRA_LIST }
+$N = $LIST.Count
+
+# 变量 GROUPS: 对象数组, 解析后的 (arch, mode, tier) 三元组
+#   示例值: @{Arch="vits"; Mode="Z1"; Tier=50}
+#   为什么先解析: 循环里要分别取用三个字段, 每次切分字符串既慢又容易错
+$GROUPS = @()
+foreach ($item in $LIST) {
+    $p = $item.Split(",")
+    $GROUPS += [pscustomobject]@{ Arch = $p[0]; Mode = $p[1]; Tier = [int]$p[2] }
+}
+
+# ==== 3. 前置检查 ====
+# 设计决策: 开跑前把"能提前发现的问题"全查掉, 而不是让它跑 20 分钟后在第 7 组才炸
+#   Test-Path: 判断路径是否存在, 返回 $True/$False
+if (-not (Test-Path $PY)) { Write-Host "[fatal] 找不到解释器: $PY"; exit 1 }
+foreach ($f in @("config.py", "data.py", "protocol.py", "run_matrix.py")) {
+    if (-not (Test-Path (Join-Path $ROOT $f))) { Write-Host "[fatal] 缺文件: $f"; exit 1 }
+}
+foreach ($t in ($GROUPS | Select-Object -ExpandProperty Tier -Unique)) {
+    $sub = Join-Path $ROOT "subsets\tier_$t.json"
+    if (-not (Test-Path $sub)) { Write-Host "[fatal] 缺子集索引: $sub (先跑 make_subsets.py)"; exit 1 }
+}
+
+New-Item -ItemType Directory -Force -Path $LOG_DIR | Out-Null
+Set-Location $ROOT
+
+# 变量 HF_HUB_OFFLINE: str, "1" = 强制离线
+#   示例值: "1"
+#   为什么: 每组都要新建 timm 模型, 联网查权重会偶发卡住 (W2-D4 踩过, 下载停在 0 字节)
+$env:HF_HUB_OFFLINE = "1"
+# 变量 PYTHONUNBUFFERED: str, "1" = 关掉 stdout 缓冲
+#   为什么: 后台跑时若带缓冲, 日志会攒一大块才落盘, tail 看不到实时进度
+$env:PYTHONUNBUFFERED = "1"
+
+"[batch] start $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') | phase=$Phase | log=$LOG" | Tee-Object -FilePath $LOG
+"[batch] groups = $N (phase=$Phase)" | Tee-Object -FilePath $LOG -Append
+
+# ==== 4. 逐组执行 (带断点续跑) ====
+# 设计决策: 断点续跑在本脚本判断 (Test-Path results/{eid}.json), 而不是只靠 run_matrix 的 --no-resume 开关
+#   为什么: 本脚本要能在整批中断后直接重跑; 已完成组的判定标准统一为"json 已存在"
+$done = 0
+$skipped = 0
+$failed = 0
+$idx = 0
+$tBatch = Get-Date
+
+foreach ($g in $GROUPS) {
+    $idx++
+    # 变量 eid: str, 实验编号 (与 config.ProtocolCfg.eid 规则一致: 全小写)
+    #   示例值: "vits1k-z2-100-s42"
+    #   为什么脚本里自己拼: 要在调用 run_matrix 之前就知道目标文件名, 才能做断点续跑判断
+    $eid = "$($g.Arch)-$($g.Mode.ToLower())-$($g.Tier)-s$SEED"
+    $json = Join-Path $ROOT "results\$eid.json"
+
+    if (Test-Path $json) {
+        $skipped++
+        "[$idx/$N] [skip] $eid (已存在 $eid.json, 断点续跑跳过)" | Tee-Object -FilePath $LOG -Append
+        continue
+    }
+
+    "[$idx/$N] [run ] $eid  @ $(Get-Date -Format 'HH:mm:ss')" | Tee-Object -FilePath $LOG -Append
+    $t0 = Get-Date
+    # 调用: & $PY run_matrix.py --arch <a> --mode <m> --data <t> --seed 42
+    #   返回值: 无 (退出码在 $LASTEXITCODE, 0=成功)
+    #   作用  : 跑完一组协议并在 results/ 与 experiments.csv 落盘
+    #   关键参数: --arch/--mode/--data/--seed 与 config.ProtocolCfg 字段一一对应
+    #   坑    : 输出里既有 stdout 也有 stderr (tqdm 走 stderr),
+    #           所以用 *>> 把「所有流」追加进日志; 只写 > 会丢掉进度条
+    & $PY "run_matrix.py" "--arch" $g.Arch "--mode" $g.Mode "--data" $g.Tier "--seed" $SEED *>> $LOG
+    # 变量 LASTEXITCODE: int, 上一个原生进程的退出码
+    #   示例值: 0 (成功) / 1 (异常)
+    #   为什么必须查: PowerShell 不会因原生进程失败而中断, 不查就会"静默跑完全部但一半没落盘"
+    $code = $LASTEXITCODE
+    $mins = [math]::Round(((Get-Date) - $t0).TotalMinutes, 2)
+
+    if ($code -eq 0 -and (Test-Path $json)) {
+        $done++
+        "[$idx/$N] [ok  ] $eid  ({0} min)" -f $mins | Tee-Object -FilePath $LOG -Append
+    } else {
+        $failed++
+        "[$idx/$N] [FAIL] $eid  exit=$code  ({0} min) -- 详见上方 traceback" -f $mins | Tee-Object -FilePath $LOG -Append
+    }
+}
+
+# ==== 5. 收尾汇总 ====
+$csvRows = 0
+if (Test-Path (Join-Path $ROOT "experiments.csv")) {
+    # Import-Csv: 把 CSV 读成对象数组; .Count 即数据行数 (不含表头)
+    $csvRows = (Import-Csv (Join-Path $ROOT "experiments.csv")).Count
+}
+$elapsed = [math]::Round(((Get-Date) - $tBatch).TotalMinutes, 2)
+"[batch] done=$done skipped=$skipped failed=$failed total=$N | 耗时 $elapsed min" | Tee-Object -FilePath $LOG -Append
+"[batch] experiments.csv 数据行 = $csvRows (main 跑完后应为 18; extra 跑完后应为 31)" | Tee-Object -FilePath $LOG -Append
+"[batch] end   $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" | Tee-Object -FilePath $LOG -Append
+
+if ($failed -gt 0) { exit 1 } else { exit 0 }

@@ -1,8 +1,8 @@
 {
- "eid": "vits-z0-10-s42-dry",
+ "eid": "vits-z0-100-s42",
  "arch": "vits",
  "mode": "Z0",
- "data": 10,
+ "data": 100,
  "aug": "basic",
  "distill": 0,
  "seed": 42,
@@ -10,13 +10,13 @@
  "preproc": "vit_small/augreg_in21k_ft_in1k/0.5-0.5",
  "best_epoch": -1,
  "epochs_run": 0,
- "top1_val": 0.8539215686274509,
- "macro_f1_val": 0.8374008022915721,
- "recall_mean_val": 0.853921568627451,
- "recall_min5_val": 0.08,
+ "top1_val": 0.9833333333333333,
+ "macro_f1_val": 0.9831818939540665,
+ "recall_mean_val": 0.9833333333333334,
+ "recall_min5_val": 0.8400000000000001,
  "top1_train": null,
  "gap": null,
- "minutes": 0.489,
+ "minutes": 0.586,
  "peak_mem_gb": 0.338,
  "degraded": "none",
  "assert_ok": true,
@@ -26,9 +26,9 @@
    384
   ],
   "feat_dim": 384,
-  "refit_acc": 1.0,
-  "knn1_acc": 0.853922,
-  "gap_ncm_knn1": 0.0,
+  "refit_acc": 0.998039,
+  "knn1_acc": 0.977451,
+  "gap_ncm_knn1": 0.005882,
   "ok": true
  },
  "checks": {
@@ -64,7 +64,7 @@
  "config": {
   "arch": "vits",
   "mode": "Z0",
-  "data": 10,
+  "data": 100,
   "seed": 42,
   "epochs": 30,
   "batch": 32,
@@ -83,7 +83,7 @@
   "save_detail": false
  },
  "date": "2026-10-06",
- "git_commit": "e4c4f6e",
- "json_path": "results/vits-z0-10-s42-dry.json",
+ "git_commit": "493081e",
+ "json_path": "results/vits-z0-100-s42.json",
  "note": ""
 }

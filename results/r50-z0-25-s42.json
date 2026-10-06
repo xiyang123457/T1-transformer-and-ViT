@@ -1,8 +1,8 @@
 {
- "eid": "r50-z0-10-s42-dry",
+ "eid": "r50-z0-25-s42",
  "arch": "r50",
  "mode": "Z0",
- "data": 10,
+ "data": 25,
  "aug": "basic",
  "distill": 0,
  "seed": 42,
@@ -10,13 +10,13 @@
  "preproc": "resnet50/IMAGENET1K_V2/0.485,0.456,0.406-0.229,0.224,0.225",
  "best_epoch": -1,
  "epochs_run": 0,
- "top1_val": 0.3862745098039216,
- "macro_f1_val": 0.3721752626127455,
- "recall_mean_val": 0.38627450980392153,
- "recall_min5_val": 0.0,
+ "top1_val": 0.5176470588235295,
+ "macro_f1_val": 0.5113740801516891,
+ "recall_mean_val": 0.5176470588235293,
+ "recall_min5_val": 0.02,
  "top1_train": null,
  "gap": null,
- "minutes": 0.174,
+ "minutes": 0.162,
  "peak_mem_gb": 0.541,
  "degraded": "none",
  "assert_ok": true,
@@ -27,9 +27,9 @@
   ],
   "feat_dim": 2048,
   "refit_acc": 1.0,
-  "knn1_acc": 0.386275,
-  "gap_ncm_knn1": 0.0,
-  "ok": true
+  "knn1_acc": 0.461765,
+  "gap_ncm_knn1": 0.055882,
+  "ok": false
  },
  "checks": {
   "mode": "Z0",
@@ -63,7 +63,7 @@
  "config": {
   "arch": "r50",
   "mode": "Z0",
-  "data": 10,
+  "data": 25,
   "seed": 42,
   "epochs": 30,
   "batch": 32,
@@ -82,7 +82,7 @@
   "save_detail": false
  },
  "date": "2026-10-06",
- "git_commit": "e4c4f6e",
- "json_path": "results/r50-z0-10-s42-dry.json",
+ "git_commit": "493081e",
+ "json_path": "results/r50-z0-25-s42.json",
  "note": ""
 }

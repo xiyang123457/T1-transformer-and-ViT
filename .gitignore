@@ -27,3 +27,12 @@ test_*.py
 # 同信息的逐类 recall/precision/f1 已落在 results/*_perclass.csv 文本里)
 *.npy
 *.npz
+
+# 批跑日志 (运行时产物, 体量随跑批次数增长, 不入库)
+logs/
+
+# IDE 会话/项目数据目录 (系统要求保留该目录, 但不入库 —— 内容频繁变动、非实验产物)
+.codebuddy/
+
+# 开发期 dry 试跑组 (D1 端到端验证用, 按计划书"不入正式表"; 正式 10% 档在 W6 产出)
+results/*-dry*
