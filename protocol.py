@@ -14,6 +14,7 @@ W3-D3 — 迁移协议 run_protocol(cfg): Z0/Z1/Z2 统一入口
     - Z2: 至少 conv1 (或 patch_embed) 权重发生变化
 """
 # ==== 1. 依赖导入 ====
+import time                                            # 计时 (D5 要测单 epoch 秒数)
 import numpy as np                                     # 设种子 (与 torch 双管齐下)
 import torch                                           # 张量/训练
 import torch.nn as nn                                  # 损失层
@@ -128,13 +129,22 @@ def train_and_eval(model, tr_loader, va_loader, optimizer, device, cfg):
     # 变量 best: float, 历史最优 val top-1; 示例值 0.0 -> ~0.96
     # 变量 bad: int, 连续未提升轮数; 达到 cfg.patience 即早停
     for epoch in range(cfg.epochs):
+        t0 = time.time()
+        # 变量 t0: float, 本轮起始时间戳 (time.time() 的返回值)
+        #   为什么: D5 要用"单 epoch 秒数"推算整个矩阵的算力预算, 必须逐轮计时
         model.train()                          # 训练态
+        running = 0.0
+        # 变量 running: float, 本轮累计损失
+        #   示例值: 0.0 -> 累加到 4.6 * 102 之类
+        #   为什么按样本数加权: 最后一批常不足 batch, 不加权会拉偏均值
         for x, y in tr_loader:
             x, y = x.to(device), y.to(device)
             optimizer.zero_grad(set_to_none=True)   # 清梯度 (置 None 比置 0 省显存)
             loss = criterion(model(x), y)
             loss.backward()                    # 反传
             optimizer.step()                   # 更新
+            running += loss.item() * y.numel()      # 按样本数加权累计
+        tr_loss = running / len(tr_loader.dataset)
         # ---- 评估 ----
         model.eval(); correct = total = 0
         with torch.no_grad():
@@ -143,7 +153,9 @@ def train_and_eval(model, tr_loader, va_loader, optimizer, device, cfg):
                 correct += (pred == y.to(device)).sum().item()
                 total += y.numel()
         acc = correct / total
-        print(f"  [{epoch:02d}] val_top1={acc:.4f}")
+        # 同时打印 train loss 与 val: 才能判断"是否在学" (D4 冒烟要求 loss 下降)
+        # 末尾 (Xs): 单 epoch 耗时, D5 预算表直接引用这个数
+        print(f"  [{epoch:02d}] train_loss={tr_loss:.4f} val_top1={acc:.4f} ({time.time()-t0:.1f}s)")
         if acc > best:
             best, bad = acc, 0
         else:
