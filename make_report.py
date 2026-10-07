@@ -22,12 +22,13 @@ make_report.py — W4 汇总产物生成器 (指标 + 图表 + 报告)
 输出:
     上述文件 (默认 notes/ 目录, 目录不存在会自动创建); 图张数 = 4 + 训练组数 + 1
 
-跑完应看到的自检数字 (2026-10-06 首跑, 22 组时):
-    - `{tag}_metrics.csv` 行数 == 已完成组数 (22)
-    - `{tag}_curve_*` 张数 == 有 history 的组数 (13; Z0 六组无训练曲线)
+跑完应看到的自检数字 (2026-10-07, 主矩阵 27 + vits1k 消融 9 = 36 组齐时):
+    - `{tag}_metrics.csv` 行数 == 已完成组数 == 36; `[consistency] missing=0`
+    - `{tag}_curve_*` 张数 == 有 history 的组数 (25; 11 个 Z0 组无训练曲线)
     - `{tag}_ladder_*` 恰 4 张 (四口径各一)
-    - `{tag}_report.md` 的「缺失组」节点出未跑的 eid (本次 9 个)
     - 阶梯图 `_1_top1_val` 里 Z0 三条线在 25/50/100 三档单调上升 (r50 51.76→64.90→71.27)
+    - vits1k-Z0 三档 = 52.06 / 68.73 / 74.22, 与 vits 的差 -43.33 / -29.21 / -24.11
+      (数据越少起点差距越大 —— 这是 vits1k 那条虚线要讲的故事)
     - 早停表里 `vits-z2-100-s42` 的 best_epoch(top1) == 4
 
 怎么验证跑对了:
@@ -56,19 +57,23 @@ TAG_DEFAULT = "W4"
 # ==== 2. 常量与期望覆盖 ====
 ARCHS = ("r50", "vits", "deitt")           # 主矩阵三架构 (口径 1)
 MODES = ("Z0", "Z1", "Z2")                 # 三档策略 (口径 14)
-MAIN_TIERS = (25, 100)                     # W4 主矩阵两档 (口径 11: 压缩规则① 先保广度)
-EXTRA_TIER = (50,)                         # W4 允许的顺手加跑: 50% 档
+TIERS = (25, 50, 100)                      # 主矩阵三档数据量 (口径 11: W4 跑 25/100, 50% 为顺手加跑)
 VITS1K_ARCH = "vits1k"                     # 起点消融 (口径 4)
-VITS1K_ABB = ("Z1", "Z2")                  # 消融只配 Z1/Z2 (Z0 是全零训练, 与起点无关)
 
-# 变量 EXPECTED: list[tuple], W4 计划内的全部 eid 三元组
-#   示例值: [("r50", "Z0", 25), ...] 共 31 个
-#   为什么写死期望集: 「缺失组」是 D5 汇总自检的硬要求 (18 组齐全、没有空格),
+# 变量 VITS1K_MODES: tuple[str, ...], 起点消融要跑的三档策略
+#   示例值: ("Z0", "Z1", "Z2")
+#   为什么**含 Z0**: W5 计划 §一 更正了 W4 的推理 —— Z0 的 NCM 直接建在**预训练特征**上,
+#     起点对它的影响**最大**而非最小。实测 vits1k-Z0@100% = 74.22 vs vits 98.33 (差 24.11 点),
+#     正是"98.33% 到底来自 21k 预训练还是 Transformer 架构"这个问题的直接答案
+VITS1K_MODES = ("Z0", "Z1", "Z2")
+
+# 变量 EXPECTED: list[tuple], W4 + W5-D1 计划内的全部 eid 三元组 (共 36)
+#   示例值: [("r50", "Z0", 25), ...]
+#   为什么写死期望集: 「缺失组」是汇总自检的硬要求 (组齐、没有空格),
 #                     必须能报出"哪几组该有但还没有", 而不是只看已完成数
 EXPECTED = (
-    [(a, m, t) for a in ARCHS for m in MODES for t in MAIN_TIERS]     # 18 组主矩阵
-    + [(a, m, t) for a in ARCHS for m in MODES for t in EXTRA_TIER]   # 9 组 50% 档
-    + [(VITS1K_ARCH, m, t) for m in VITS1K_ABB for t in MAIN_TIERS]   # 4 组起点消融
+    [(a, m, t) for a in ARCHS for m in MODES for t in TIERS]              # 27 组主矩阵
+    + [(VITS1K_ARCH, m, t) for m in VITS1K_MODES for t in TIERS]          # 9 组起点消融
 )
 
 METRIC_COLS = ["top1_val", "macro_f1_val", "recall_mean_val", "recall_min5_val"]

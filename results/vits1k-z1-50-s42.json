@@ -1,0 +1,259 @@
+{
+ "eid": "vits1k-z1-50-s42",
+ "arch": "vits1k",
+ "mode": "Z1",
+ "data": 50,
+ "aug": "basic",
+ "distill": 0,
+ "seed": 42,
+ "eval_token": "cls",
+ "preproc": "vit_small/augreg_in1k/0.5-0.5",
+ "best_epoch": 16,
+ "epochs_run": 22,
+ "top1_val": 0.7627450980392156,
+ "macro_f1_val": 0.7580045885875429,
+ "recall_mean_val": 0.762745098039216,
+ "recall_min5_val": 0.24000000000000005,
+ "top1_train": 0.9980392156862745,
+ "gap": 0.23529411764705888,
+ "minutes": 4.048,
+ "peak_mem_gb": 0.47,
+ "degraded": "none",
+ "assert_ok": true,
+ "ncm_check": null,
+ "checks": {
+  "mode": "Z1",
+  "changed_head": [
+   "head.weight",
+   "head.bias"
+  ],
+  "changed_backbone": [],
+  "backbone_frozen": true,
+  "head_classes_ok": true,
+  "val_acc_sane": true,
+  "ok": true
+ },
+ "history": [
+  {
+   "epoch": 0,
+   "train_loss": 4.801314,
+   "val_loss": 3.810647,
+   "val_top1": 0.176471,
+   "lr": 0.001,
+   "seconds": 11.33
+  },
+  {
+   "epoch": 1,
+   "train_loss": 3.419494,
+   "val_loss": 2.991636,
+   "val_top1": 0.422549,
+   "lr": 0.001,
+   "seconds": 10.15
+  },
+  {
+   "epoch": 2,
+   "train_loss": 2.474641,
+   "val_loss": 2.402065,
+   "val_top1": 0.566667,
+   "lr": 0.001,
+   "seconds": 10.29
+  },
+  {
+   "epoch": 3,
+   "train_loss": 1.990877,
+   "val_loss": 2.005301,
+   "val_top1": 0.640196,
+   "lr": 0.001,
+   "seconds": 9.99
+  },
+  {
+   "epoch": 4,
+   "train_loss": 1.474804,
+   "val_loss": 1.765532,
+   "val_top1": 0.657843,
+   "lr": 0.001,
+   "seconds": 9.96
+  },
+  {
+   "epoch": 5,
+   "train_loss": 1.182199,
+   "val_loss": 1.5858,
+   "val_top1": 0.697059,
+   "lr": 0.001,
+   "seconds": 10.18
+  },
+  {
+   "epoch": 6,
+   "train_loss": 1.02244,
+   "val_loss": 1.455781,
+   "val_top1": 0.702941,
+   "lr": 0.001,
+   "seconds": 10.03
+  },
+  {
+   "epoch": 7,
+   "train_loss": 0.827014,
+   "val_loss": 1.357496,
+   "val_top1": 0.720588,
+   "lr": 0.001,
+   "seconds": 10.15
+  },
+  {
+   "epoch": 8,
+   "train_loss": 0.760689,
+   "val_loss": 1.284201,
+   "val_top1": 0.737255,
+   "lr": 0.001,
+   "seconds": 9.95
+  },
+  {
+   "epoch": 9,
+   "train_loss": 0.665554,
+   "val_loss": 1.22832,
+   "val_top1": 0.738235,
+   "lr": 0.001,
+   "seconds": 9.77
+  },
+  {
+   "epoch": 10,
+   "train_loss": 0.57387,
+   "val_loss": 1.179591,
+   "val_top1": 0.735294,
+   "lr": 0.001,
+   "seconds": 9.85
+  },
+  {
+   "epoch": 11,
+   "train_loss": 0.544767,
+   "val_loss": 1.136877,
+   "val_top1": 0.735294,
+   "lr": 0.001,
+   "seconds": 9.84
+  },
+  {
+   "epoch": 12,
+   "train_loss": 0.460692,
+   "val_loss": 1.088971,
+   "val_top1": 0.74902,
+   "lr": 0.001,
+   "seconds": 10.03
+  },
+  {
+   "epoch": 13,
+   "train_loss": 0.426736,
+   "val_loss": 1.072617,
+   "val_top1": 0.75,
+   "lr": 0.001,
+   "seconds": 10.18
+  },
+  {
+   "epoch": 14,
+   "train_loss": 0.382285,
+   "val_loss": 1.051292,
+   "val_top1": 0.748039,
+   "lr": 0.001,
+   "seconds": 11.0
+  },
+  {
+   "epoch": 15,
+   "train_loss": 0.378518,
+   "val_loss": 1.034683,
+   "val_top1": 0.75098,
+   "lr": 0.001,
+   "seconds": 10.95
+  },
+  {
+   "epoch": 16,
+   "train_loss": 0.316919,
+   "val_loss": 0.996423,
+   "val_top1": 0.762745,
+   "lr": 0.001,
+   "seconds": 11.11
+  },
+  {
+   "epoch": 17,
+   "train_loss": 0.335912,
+   "val_loss": 1.001034,
+   "val_top1": 0.752941,
+   "lr": 0.001,
+   "seconds": 11.08
+  },
+  {
+   "epoch": 18,
+   "train_loss": 0.368795,
+   "val_loss": 0.987609,
+   "val_top1": 0.759804,
+   "lr": 0.001,
+   "seconds": 10.75
+  },
+  {
+   "epoch": 19,
+   "train_loss": 0.328131,
+   "val_loss": 0.978517,
+   "val_top1": 0.758824,
+   "lr": 0.001,
+   "seconds": 11.28
+  },
+  {
+   "epoch": 20,
+   "train_loss": 0.314786,
+   "val_loss": 0.967524,
+   "val_top1": 0.75098,
+   "lr": 0.001,
+   "seconds": 10.71
+  },
+  {
+   "epoch": 21,
+   "train_loss": 0.275032,
+   "val_loss": 0.957025,
+   "val_top1": 0.756863,
+   "lr": 0.001,
+   "seconds": 10.77
+  }
+ ],
+ "data_cfg": {
+  "input_size": [
+   3,
+   224,
+   224
+  ],
+  "interpolation": "bicubic",
+  "mean": [
+   0.5,
+   0.5,
+   0.5
+  ],
+  "std": [
+   0.5,
+   0.5,
+   0.5
+  ],
+  "crop_pct": 0.9,
+  "crop_mode": "center"
+ },
+ "config": {
+  "arch": "vits1k",
+  "mode": "Z1",
+  "data": 50,
+  "seed": 42,
+  "epochs": 30,
+  "batch": 32,
+  "lr_head": 0.001,
+  "lr_backbone": 0.0001,
+  "weight_decay": 0.0001,
+  "patience": 5,
+  "num_workers": 0,
+  "num_classes": 102,
+  "input_size": 224,
+  "distill": false,
+  "eval_token": "cls",
+  "aug": "basic",
+  "degraded": "none",
+  "note": "",
+  "save_detail": false
+ },
+ "date": "2026-10-07",
+ "git_commit": "54ee8d8",
+ "json_path": "results/vits1k-z1-50-s42.json",
+ "note": ""
+}

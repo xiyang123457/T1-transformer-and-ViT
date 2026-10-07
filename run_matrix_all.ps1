@@ -1,4 +1,4 @@
-<#
+﻿<#
 L1 — 批跑启动器 (W4 用, 支持两批)
 
 用途:
@@ -6,12 +6,21 @@ L1 — 批跑启动器 (W4 用, 支持两批)
     支持后台运行 + 随时 tail 查看。本身不做训练/落盘逻辑, 只做编排 (与 run_matrix.py 职责不重叠)。
 
     -Phase main  : 主矩阵 18 组 = {r50,vits,deitt} × {Z0,Z1,Z2} × {25,100}, seed 42   [已完成 2026-10-06]
-    -Phase extra : W4 两条"允许的加跑" 13 组 =
-                   ① 50% 档 9 组 = {r50,vits,deitt} × {Z0,Z1,Z2} × {50}        (计划书允许的顺手加跑)
-                   ② vits1k 起点消融 4 组 = vits1k × {Z1,Z2} × {25,100}          (口径 4, 必须在 W4 内跑)
+    -Phase extra : W4 两条"允许的加跑" 13 组 =                                           [已完成 2026-10-06]
+                   ① 50% 档 9 组 = {r50,vits,deitt} × {Z0,Z1,Z2} × {50}
+                   ② vits1k 起点消融 4 组 = vits1k × {Z1,Z2} × {25,100}
+    -Phase w5d1  : W5-D1 补 vits1k 起点消融剩余 5 组 =
+                   vits1k × {Z0} × {25,50,100} + vits1k × {Z1,Z2} × {50}
+                   (W5 计划 §一 更正: Z0 是"起点影响最大"的一档 —— NCM 直接建在预训练特征上,
+                    补它才能回答 "vits 的 98.33% 是 Transformer 架构, 还是 21k 预训练")
 
 输入:
-    参数 -Phase ("main" | "extra"), 默认 main。组清单写死在下面的「矩阵定义」分节, 便于改档位后重跑。
+    参数 -Phase ("main" | "extra" | "w5d1"), 默认 main。组清单写死在下面的「矩阵定义」分节, 便于改档位后重跑。
+
+⚠ 本文件含中文, **必须存为 UTF-8 带 BOM**:
+    Windows PowerShell 5.1 会按系统 ANSI(代码页 936) 解析**无 BOM** 的 UTF-8。此时若某行中文字符串
+    之前的 ASCII 字节数是**奇数**, 收尾引号会被当成多字节字符的第二个字节吞掉 -> 字符串未闭合 ->
+    整个脚本解析失败。2026-10-07 实际踩到 (3 个语法错误, 批跑连日志都不生成)。改完本文件记得补 BOM。
 输出:
     - `logs/matrix_<时间戳>.log`   本次批跑的完整终端输出 (每组一段)
     - `results/{eid}.json`         每组明细 (由 run_matrix.py 落盘)
@@ -36,9 +45,9 @@ L1 — 批跑启动器 (W4 用, 支持两批)
 
 param(
     # 变量 Phase: str, 选哪一批
-    #   示例值: "extra"
-    #   为什么用参数而非两个脚本: 两批共用同一套前置检查/断点续跑/日志逻辑, 避免复制粘贴导致行为漂移
-    [ValidateSet("main", "extra")]
+    #   示例值: "w5d1"
+    #   为什么用参数而非多个脚本: 各批共用同一套前置检查/断点续跑/日志逻辑, 避免复制粘贴导致行为漂移
+    [ValidateSet("main", "extra", "w5d1")]
     [string]$Phase = "main"
 )
 
@@ -86,7 +95,23 @@ $EXTRA_LIST = @(
     "deitt,Z1,50", "deitt,Z2,50"
 )
 
-$LIST = if ($Phase -eq "main") { $MAIN_LIST } else { $EXTRA_LIST }
+# —— W5-D1 批 (2026-10-07): 补 vits1k 起点消融剩余 5 组 ——
+#   为什么 Z0 也要补: W4 计划原写「配 Z1/Z2, 因为 Z0 是全零训练无关起点」——**这句是错的**。
+#     Z0 的 NCM 直接建在**预训练特征**上, 起点对它的影响**最大**而非最小。
+#   顺序: 3 个 Z0 (秒级, 且是本周最关键的数字) -> Z1-50 -> Z2-50 (训练组)
+$W5D1_LIST = @(
+    "vits1k,Z0,25", "vits1k,Z0,50", "vits1k,Z0,100",
+    "vits1k,Z1,50", "vits1k,Z2,50"
+)
+
+# 变量 LIST: array, 本批要跑的组清单 (由 -Phase 选)
+#   示例值: @("vits1k,Z0,25", ...)
+#   为什么用 switch: 三批以上时 if/else 嵌套难读且易漏分支
+$LIST = switch ($Phase) {
+    "main"  { $MAIN_LIST }
+    "extra" { $EXTRA_LIST }
+    "w5d1"  { $W5D1_LIST }
+}
 $N = $LIST.Count
 
 # 变量 GROUPS: 对象数组, 解析后的 (arch, mode, tier) 三元组
@@ -123,6 +148,21 @@ $env:PYTHONUNBUFFERED = "1"
 
 "[batch] start $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') | phase=$Phase | log=$LOG" | Tee-Object -FilePath $LOG
 "[batch] groups = $N (phase=$Phase)" | Tee-Object -FilePath $LOG -Append
+
+# —— 预训练权重缓存探针 (2026-10-07 新增; 本体在 cache_probe.py) ——
+# 设计决策: 探针逻辑抽成独立 .py, 不在本脚本里内嵌 here-string。为什么:
+#   ① Windows PowerShell 5.1 的 here-string 要求 CRLF 行尾, 本仓库文件是 LF ->
+#      内嵌 here-string 会让**整个脚本解析失败**(2026-10-07 实际踩到: 3 个语法错误, 批跑直接不启动);
+#   ② 独立文件可单测 (`python cache_probe.py vits1k`), 也便于 W5/W6 复用。
+# 背景: W4 曾因 HF_HUB_OFFLINE=1 + vits1k 的 augreg_in1k 权重未缓存, 让 4 组「秒失败」,
+#   而且是跑完翻日志才发现 —— 开跑前探一次就能挡住。
+$probeArchs = @($GROUPS | Select-Object -ExpandProperty Arch -Unique)
+& $PY "cache_probe.py" $probeArchs *>> $LOG
+if ($LASTEXITCODE -ne 0) {
+    "[fatal] 有架构的预训练权重不在本地缓存 (见上); 先下载再跑, 否则该架构的组会秒失败" | Tee-Object -FilePath $LOG -Append
+    exit 1
+}
+"[probe] 本批全部架构的权重均可离线加载" | Tee-Object -FilePath $LOG -Append
 
 # ==== 4. 逐组执行 (带断点续跑) ====
 # 设计决策: 断点续跑在本脚本判断 (Test-Path results/{eid}.json), 而不是只靠 run_matrix 的 --no-resume 开关

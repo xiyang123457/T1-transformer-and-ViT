@@ -30,3 +30,8 @@ vits1k-z1-100-s42,2026-10-06,vits1k,Z1,100,basic,0,42,cls,vit_small/augreg_in1k/
 vits1k-z2-100-s42,2026-10-06,vits1k,Z2,100,basic,0,42,cls,vit_small/augreg_in1k/0.5-0.5,6,12,93.24,93.16,93.24,58.0,100.0,6.76,6.93,2.078,none,True,,493081e,results/vits1k-z2-100-s42.json,
 vits1k-z1-25-s42,2026-10-06,vits1k,Z1,25,basic,0,42,cls,vit_small/augreg_in1k/0.5-0.5,23,29,58.04,56.59,58.04,4.0,100.0,41.96,8.863,0.465,none,True,,493081e,results/vits1k-z1-25-s42.json,
 vits1k-z2-25-s42,2026-10-06,vits1k,Z2,25,basic,0,42,cls,vit_small/augreg_in1k/0.5-0.5,18,24,66.67,65.05,66.67,10.0,100.0,33.33,5.795,2.08,none,True,,493081e,results/vits1k-z2-25-s42.json,
+vits1k-z0-25-s42,2026-10-07,vits1k,Z0,25,basic,0,42,cls,vit_small/augreg_in1k/0.5-0.5,-1,0,52.06,51.46,52.06,4.0,,,0.265,0.338,none,True,"shape=[102, 384];refit=0.9951;knn1=0.4784;gap=0.0422;ok=False",54ee8d8,results/vits1k-z0-25-s42.json,
+vits1k-z0-50-s42,2026-10-07,vits1k,Z0,50,basic,0,42,cls,vit_small/augreg_in1k/0.5-0.5,-1,0,68.73,68.74,68.73,12.0,,,0.221,0.338,none,True,"shape=[102, 384];refit=0.9686;knn1=0.5961;gap=0.0912;ok=False",54ee8d8,results/vits1k-z0-50-s42.json,
+vits1k-z0-100-s42,2026-10-07,vits1k,Z0,100,basic,0,42,cls,vit_small/augreg_in1k/0.5-0.5,-1,0,74.22,74.05,74.22,24.0,,,0.275,0.338,none,True,"shape=[102, 384];refit=0.9196;knn1=0.6696;gap=0.0725;ok=False",54ee8d8,results/vits1k-z0-100-s42.json,
+vits1k-z1-50-s42,2026-10-07,vits1k,Z1,50,basic,0,42,cls,vit_small/augreg_in1k/0.5-0.5,16,22,76.27,75.8,76.27,24.0,99.8,23.53,4.048,0.47,none,True,,54ee8d8,results/vits1k-z1-50-s42.json,
+vits1k-z2-50-s42,2026-10-07,vits1k,Z2,50,basic,0,42,cls,vit_small/augreg_in1k/0.5-0.5,11,17,84.61,84.18,84.61,34.0,100.0,15.39,4.345,2.077,none,True,,54ee8d8,results/vits1k-z2-50-s42.json,

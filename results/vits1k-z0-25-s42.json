@@ -1,0 +1,89 @@
+{
+ "eid": "vits1k-z0-25-s42",
+ "arch": "vits1k",
+ "mode": "Z0",
+ "data": 25,
+ "aug": "basic",
+ "distill": 0,
+ "seed": 42,
+ "eval_token": "cls",
+ "preproc": "vit_small/augreg_in1k/0.5-0.5",
+ "best_epoch": -1,
+ "epochs_run": 0,
+ "top1_val": 0.5205882352941177,
+ "macro_f1_val": 0.5145932582593715,
+ "recall_mean_val": 0.5205882352941176,
+ "recall_min5_val": 0.04,
+ "top1_train": null,
+ "gap": null,
+ "minutes": 0.265,
+ "peak_mem_gb": 0.338,
+ "degraded": "none",
+ "assert_ok": true,
+ "ncm_check": {
+  "center_shape": [
+   102,
+   384
+  ],
+  "feat_dim": 384,
+  "refit_acc": 0.995098,
+  "knn1_acc": 0.478431,
+  "gap_ncm_knn1": 0.042157,
+  "ok": false
+ },
+ "checks": {
+  "mode": "Z0",
+  "changed_head": [],
+  "changed_backbone": [],
+  "backbone_frozen": false,
+  "head_classes_ok": true,
+  "val_acc_sane": true,
+  "ok": true
+ },
+ "history": [],
+ "data_cfg": {
+  "input_size": [
+   3,
+   224,
+   224
+  ],
+  "interpolation": "bicubic",
+  "mean": [
+   0.5,
+   0.5,
+   0.5
+  ],
+  "std": [
+   0.5,
+   0.5,
+   0.5
+  ],
+  "crop_pct": 0.9,
+  "crop_mode": "center"
+ },
+ "config": {
+  "arch": "vits1k",
+  "mode": "Z0",
+  "data": 25,
+  "seed": 42,
+  "epochs": 30,
+  "batch": 32,
+  "lr_head": 0.001,
+  "lr_backbone": 0.0001,
+  "weight_decay": 0.0001,
+  "patience": 5,
+  "num_workers": 0,
+  "num_classes": 102,
+  "input_size": 224,
+  "distill": false,
+  "eval_token": "cls",
+  "aug": "basic",
+  "degraded": "none",
+  "note": "",
+  "save_detail": false
+ },
+ "date": "2026-10-07",
+ "git_commit": "54ee8d8",
+ "json_path": "results/vits1k-z0-25-s42.json",
+ "note": ""
+}
