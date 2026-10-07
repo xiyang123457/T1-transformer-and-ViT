@@ -9,13 +9,19 @@ L1 — 批跑启动器 (W4 用, 支持两批)
     -Phase extra : W4 两条"允许的加跑" 13 组 =                                           [已完成 2026-10-06]
                    ① 50% 档 9 组 = {r50,vits,deitt} × {Z0,Z1,Z2} × {50}
                    ② vits1k 起点消融 4 组 = vits1k × {Z1,Z2} × {25,100}
-    -Phase w5d1  : W5-D1 补 vits1k 起点消融剩余 5 组 =
+    -Phase w5d1  : W5-D1 补 vits1k 起点消融剩余 5 组 =                                  [已完成 2026-10-07]
                    vits1k × {Z0} × {25,50,100} + vits1k × {Z1,Z2} × {50}
                    (W5 计划 §一 更正: Z0 是"起点影响最大"的一档 —— NCM 直接建在预训练特征上,
                     补它才能回答 "vits 的 98.33% 是 Transformer 架构, 还是 21k 预训练")
+    -Phase w5d3  : W5-D3 维度 D 消融 6 组 (W5 计划 §六 A 组) =
+                   deitt × Z2 × {25,100} × {strong, distill, strong+distill}
+                   (固定 arch=deitt / mode=Z2, 只翻「增强」与「teacher」两个开关 ——
+                    同结构单开关才叫消融, 见计划 §二 科学目标)
+                   ⚠ 6 组必须落成 6 个不同 eid (靠 -strong / -distill 后缀); 否则第 2 组起被 [skip],
+                     你以为跑了 6 组实际只有 1 组 (W5 坑位 10)
 
 输入:
-    参数 -Phase ("main" | "extra" | "w5d1"), 默认 main。组清单写死在下面的「矩阵定义」分节, 便于改档位后重跑。
+    参数 -Phase ("main" | "extra" | "w5d1" | "w5d3"), 默认 main。组清单写死在下面的「矩阵定义」分节, 便于改档位后重跑。
 
 ⚠ 本文件含中文, **必须存为 UTF-8 带 BOM**:
     Windows PowerShell 5.1 会按系统 ANSI(代码页 936) 解析**无 BOM** 的 UTF-8。此时若某行中文字符串
@@ -47,7 +53,7 @@ param(
     # 变量 Phase: str, 选哪一批
     #   示例值: "w5d1"
     #   为什么用参数而非多个脚本: 各批共用同一套前置检查/断点续跑/日志逻辑, 避免复制粘贴导致行为漂移
-    [ValidateSet("main", "extra", "w5d1")]
+    [ValidateSet("main", "extra", "w5d1", "w5d3")]
     [string]$Phase = "main"
 )
 
@@ -104,6 +110,19 @@ $W5D1_LIST = @(
     "vits1k,Z1,50", "vits1k,Z2,50"
 )
 
+# —— W5-D3 批 (2026-10-07): 维度 D 消融 6 组 (计划 §六 A 组) ——
+#   格式: "arch,mode,tier,aug,distill" —— 后两段就是维度 D 的两个开关 (口径 25 增强 / 口径 26 蒸馏)
+#   顺序: 先 25% 档 (每格最便宜, 早暴露问题), 同档内 strong -> distill -> 双开; 再 100% 档
+#   为什么显式列 6 行而不写笛卡尔积: 只翻这两个开关, 不扩到 Z1 / 不扩到别的架构 (计划 §六)
+$W5D3_LIST = @(
+    "deitt,Z2,25,strong,0",
+    "deitt,Z2,25,basic,1",
+    "deitt,Z2,25,strong,1",
+    "deitt,Z2,100,strong,0",
+    "deitt,Z2,100,basic,1",
+    "deitt,Z2,100,strong,1"
+)
+
 # 变量 LIST: array, 本批要跑的组清单 (由 -Phase 选)
 #   示例值: @("vits1k,Z0,25", ...)
 #   为什么用 switch: 三批以上时 if/else 嵌套难读且易漏分支
@@ -111,16 +130,20 @@ $LIST = switch ($Phase) {
     "main"  { $MAIN_LIST }
     "extra" { $EXTRA_LIST }
     "w5d1"  { $W5D1_LIST }
+    "w5d3"  { $W5D3_LIST }
 }
 $N = $LIST.Count
 
-# 变量 GROUPS: 对象数组, 解析后的 (arch, mode, tier) 三元组
-#   示例值: @{Arch="vits"; Mode="Z1"; Tier=50}
-#   为什么先解析: 循环里要分别取用三个字段, 每次切分字符串既慢又容易错
+# 变量 GROUPS: 对象数组, 解析后的 (arch, mode, tier, aug, distill) 五元组
+#   示例值: @{Arch="deitt"; Mode="Z2"; Tier=25; Aug="strong"; Distill="1"}
+#   为什么先解析: 循环里要分别取用各字段, 每次切分字符串既慢又容易错
+#   向后兼容: 老清单 (main/extra/w5d1) 只写 3 段 -> 后两段取默认 basic / 0, 行为与改造前逐位一致
 $GROUPS = @()
 foreach ($item in $LIST) {
     $p = $item.Split(",")
-    $GROUPS += [pscustomobject]@{ Arch = $p[0]; Mode = $p[1]; Tier = [int]$p[2] }
+    $aug = if ($p.Count -ge 4) { $p[3] } else { "basic" }
+    $dis = if ($p.Count -ge 5) { $p[4] } else { "0" }
+    $GROUPS += [pscustomobject]@{ Arch = $p[0]; Mode = $p[1]; Tier = [int]$p[2]; Aug = $aug; Distill = $dis }
 }
 
 # ==== 3. 前置检查 ====
@@ -164,6 +187,23 @@ if ($LASTEXITCODE -ne 0) {
 }
 "[probe] 本批全部架构的权重均可离线加载" | Tee-Object -FilePath $LOG -Append
 
+# —— 蒸馏前置自检 (2026-10-07 新增) ——
+# 设计决策: 只在"本批含蒸馏组"时才跑; 其余批次零开销
+# 为什么必须挡在训练之前: distill.py 的自检里有两条**只能真跑一次才验得出来**的东西 ——
+#   ① 手写蒸馏损失 / 两路 logits 与 timm 官方的数值对齐 (验收 3);
+#   ② 坑位 1 的分级断言: strong 臂的 teacher top1 必须 < 0.92 (实测 83-85%)。
+#      这是"teacher 在线前向到底接上了没"的唯一照妖镜 —— 若不接, 蒸馏退化成第二次 CE,
+#      Δ蒸馏 结构性恒为 0, 而 6 组会"看起来很正常"地白跑一小时 (口径 27)
+if (($GROUPS | Where-Object { $_.Distill -eq "1" }).Count -gt 0) {
+    "[probe] 本批含蒸馏组 -> 先跑 distill.py 自检" | Tee-Object -FilePath $LOG -Append
+    & $PY "distill.py" *>> $LOG
+    if ($LASTEXITCODE -ne 0) {
+        "[fatal] distill.py 自检未通过 (见上); 蒸馏组会白跑或退化成第二次 CE, 先修再跑" | Tee-Object -FilePath $LOG -Append
+        exit 1
+    }
+    "[probe] distill.py 自检通过 (数值对齐 + 在线前向分级断言)" | Tee-Object -FilePath $LOG -Append
+}
+
 # ==== 4. 逐组执行 (带断点续跑) ====
 # 设计决策: 断点续跑在本脚本判断 (Test-Path results/{eid}.json), 而不是只靠 run_matrix 的 --no-resume 开关
 #   为什么: 本脚本要能在整批中断后直接重跑; 已完成组的判定标准统一为"json 已存在"
@@ -175,10 +215,13 @@ $tBatch = Get-Date
 
 foreach ($g in $GROUPS) {
     $idx++
-    # 变量 eid: str, 实验编号 (与 config.ProtocolCfg.eid 规则一致: 全小写)
-    #   示例值: "vits1k-z2-100-s42"
+    # 变量 eid: str, 实验编号 (必须与 config.ProtocolCfg.eid 规则完全一致: 全小写 + 口径后缀)
+    #   示例值: "vits1k-z2-100-s42" / "deitt-z2-100-s42-strong-distill"
     #   为什么脚本里自己拼: 要在调用 run_matrix 之前就知道目标文件名, 才能做断点续跑判断
+    #   为什么必须复刻后缀: 后缀漏一个 -> 6 个 D 组落进同一个 eid -> 第 2 组起 [skip] (坑位 10)
     $eid = "$($g.Arch)-$($g.Mode.ToLower())-$($g.Tier)-s$SEED"
+    if ($g.Aug -ne "basic") { $eid += "-$($g.Aug)" }
+    if ($g.Distill -eq "1") { $eid += "-distill" }
     $json = Join-Path $ROOT "results\$eid.json"
 
     if (Test-Path $json) {
@@ -195,7 +238,14 @@ foreach ($g in $GROUPS) {
     #   关键参数: --arch/--mode/--data/--seed 与 config.ProtocolCfg 字段一一对应
     #   坑    : 输出里既有 stdout 也有 stderr (tqdm 走 stderr),
     #           所以用 *>> 把「所有流」追加进日志; 只写 > 会丢掉进度条
-    & $PY "run_matrix.py" "--arch" $g.Arch "--mode" $g.Mode "--data" $g.Tier "--seed" $SEED *>> $LOG
+    # 变量 callArgs: array, 传给 run_matrix.py 的完整参数
+    #   为什么先拼数组再用 @callArgs 展开: 只有"要不要带 aug/distill"随组变化;
+    #     直接字符串拼接容易给 --distill 这种无值开关多带一个参数
+    $callArgs = @("run_matrix.py", "--arch", $g.Arch, "--mode", $g.Mode,
+                  "--data", $g.Tier, "--seed", $SEED)
+    if ($g.Aug -ne "basic") { $callArgs += @("--aug", $g.Aug) }
+    if ($g.Distill -eq "1") { $callArgs += "--distill" }
+    & $PY @callArgs *>> $LOG
     # 变量 LASTEXITCODE: int, 上一个原生进程的退出码
     #   示例值: 0 (成功) / 1 (异常)
     #   为什么必须查: PowerShell 不会因原生进程失败而中断, 不查就会"静默跑完全部但一半没落盘"
@@ -219,7 +269,11 @@ if (Test-Path (Join-Path $ROOT "experiments.csv")) {
 }
 $elapsed = [math]::Round(((Get-Date) - $tBatch).TotalMinutes, 2)
 "[batch] done=$done skipped=$skipped failed=$failed total=$N | 耗时 $elapsed min" | Tee-Object -FilePath $LOG -Append
-"[batch] experiments.csv 数据行 = $csvRows (main 跑完后应为 18; extra 跑完后应为 31)" | Tee-Object -FilePath $LOG -Append
+# 变量 expectRows: hashtable, 各批跑完后 experiments.csv 应有的数据行数
+#   示例值: @{main=18; extra=31; w5d1=36; w5d3=42}
+#   为什么逐批写死: 批跑无人值守, 收尾必须自己报"应该多少 / 实际多少", 否则漏跑看不出来
+$expectRows = @{ main = 18; extra = 31; w5d1 = 36; w5d3 = 42 }
+"[batch] experiments.csv 数据行 = $csvRows (phase=$Phase 跑完后应为 $($expectRows[$Phase]))" | Tee-Object -FilePath $LOG -Append
 "[batch] end   $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" | Tee-Object -FilePath $LOG -Append
 
 if ($failed -gt 0) { exit 1 } else { exit 0 }

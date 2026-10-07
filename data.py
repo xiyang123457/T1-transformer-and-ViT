@@ -41,13 +41,14 @@ IMAGENET_STD = (0.229, 0.224, 0.225)
 # 变量 IMAGENET_STD: tuple[float,float,float], ImageNet-1k 三通道标准差
 
 # ==== 3. 图像变换 (按架构; 口径 3: 每架构用官方预处理) ====
-def timm_transform(model, train: bool):
+def timm_transform(model, train: bool, aug: str = "basic"):
     """
     从 timm 模型解析官方预处理并构建变换
 
     参数:
         model (nn.Module): timm 模型 (需已建好; 只读它的 pretrained_cfg)
         train (bool): True = 训练增强; False = 确定性中心裁剪
+        aug (str): "basic" (RandomResizedCrop + 水平翻转) 或 "strong" (再加 RandAugment)
     返回:
         (transform, data_cfg: dict) — data_cfg 含 mean/std/crop_pct/interpolation/input_size
     """
@@ -57,15 +58,24 @@ def timm_transform(model, train: bool):
     #   关键参数: 第一个 {} 是用户覆盖项 (这里不覆盖, 完全听官方)
     #   坑: 记录必须用"这里解析出来的"值, 而不是手抄的常数 (timm 升级会变)
     data_cfg = timm.data.resolve_data_config({}, model=model)
+    # 设计决策 (口径 25): strong 只在训练态加 auto_augment, **不传 re_prob / drop-path**
+    #   为什么: 口径 25 要保持"增强"这一个轴干净。DeiT 官方配方还带 RandomErasing(reprob=0.25)
+    #     与 stochastic depth(0.1), 本实验**故意排除** -> 报告只能写"强增强",
+    #     不能写"复现了 DeiT 配方"(加了这两项就把单一增强轴变成"增强+正则化"混合轴, Δ增强 归因被稀释)
+    extra = {}
+    if train and aug == "strong":
+        extra["auto_augment"] = "rand-m9-mstd0.5-inc1"   # DeiT 官方值, 未自调
     # timm.data.create_transform(...) -> torchvision.transforms.Compose
     #   作用: 按解析出的 mean/std/crop_pct/interpolation 构造标准变换
-    #   关键参数: is_training=True 时含 RandomResizedCrop + 水平翻转 (即 "basic" 增强)
-    #   坑: 不传 auto_augment/re_prob 时才是 basic; 传了就成 strong (那是 W5 维度 D)
+    #   关键参数: is_training=True 时含 RandomResizedCrop + 水平翻转 (即 "basic" 增强);
+    #             auto_augment 传入后才追加 RandAugment (即 "strong")
+    #   坑: extra 为空时与 W4 逐位一致 —— 这是"basic 臂复用 W4 数字"的前提
     transform = timm.data.create_transform(
         input_size=data_cfg["input_size"], is_training=train,
         mean=data_cfg["mean"], std=data_cfg["std"],
         crop_pct=data_cfg.get("crop_pct", 0.875),
         interpolation=data_cfg.get("interpolation", "bilinear"),
+        **extra,
     )
     return transform, data_cfg
 
@@ -98,7 +108,7 @@ def torchvision_transform(train: bool):
                 "crop_pct": 0.875, "interpolation": "bilinear"}
     return transform, data_cfg
 
-def build_transform(spec, train: bool, model=None):
+def build_transform(spec, train: bool, model=None, aug: str = "basic"):
     """
     按架构分派构建变换
 
@@ -106,13 +116,14 @@ def build_transform(spec, train: bool, model=None):
         spec (ArchSpec): 架构注册项 (决定走 timm 还是 torchvision)
         train (bool): 是否训练增强
         model (nn.Module|None): timm 架构必需 (用它解析官方 mean/std)
+        aug (str): "basic" / "strong" (仅对 timm 训练态生效; torchvision 分支忽略)
     返回:
         (transform, data_cfg: dict)
     """
     if spec.library == "timm":
         if model is None:
             raise ValueError("timm 架构必须传入 model (用它解析官方预处理常数)")
-        return timm_transform(model, train)
+        return timm_transform(model, train, aug=aug)
     return torchvision_transform(train)
 
 # ==== 4. 数据集加载 (口径 7: test 在 W8 之前不可访问) ====

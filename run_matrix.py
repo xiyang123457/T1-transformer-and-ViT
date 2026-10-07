@@ -33,7 +33,7 @@ from datetime import date                      # 记录跑实验的日期
 
 import numpy as np                             # --save-detail 的逐类统计
 
-from config import DATA_TIERS, MODES, ProtocolCfg   # 唯一配置源 + 枚举
+from config import AUG_CHOICES, DATA_TIERS, MODES, ProtocolCfg   # 唯一配置源 + 枚举
 from protocol import run_protocol                   # 协议主体 (本脚本只做编排与落盘)
 
 # ==== 2. 路径与列定义 ====
@@ -59,13 +59,18 @@ COLUMNS = [
     "git_commit", "json_path",
     # —— 结论 (唯一手填, A7) ——
     "note",
+    # —— W5 新增 (口径 24): 蒸馏副读数, 非蒸馏架构留空 ——
+    "top1_val_distavg",
 ]
-# 变量 COLUMNS: list[str], 汇总表 26 列 (口径 16④: 只许往后追加, 不许改写既有列)
-#   示例值: 见上 (10 + 2 + 4 + 2 + 3 + 2 + 2 + 1 = 26)
-#   为什么顺序固定: W5/W6 加新列必须追加到最右, 否则前面已跑组的 CSV 会错位
+# 变量 COLUMNS: list[str], 汇总表 27 列 (口径 16④: 只许往后追加, 不许改写既有列)
+#   示例值: 见上 (26 + 1 = 27)
+#   为什么新列追加在"最右"(note 之后)而不是插在四口径旁边:
+#     口径 16④ 要求既有列的位置与含义一个都不许动 —— 追加到最右是唯一"零风险"的位置,
+#     代价只是列的语义顺序不那么顺眼 (读表按名取列, 不按位置)
+#   坑: 加列后必须先迁移旧 CSV (表头 26 / 数据 27 -> 按名取列全错), 用 migrate_csv.py
 
 PCT_COLS = {"top1_val", "macro_f1_val", "recall_mean_val", "recall_min5_val",
-            "top1_train", "gap"}
+            "top1_train", "gap", "top1_val_distavg"}
 # 变量 PCT_COLS: set[str], 需要按"百分数 2 位小数"落表的列 (清单 A2 报数精度)
 #   为什么: val 只有 1020 张 -> 1 张 = 0.098 点, 报 4 位小数是假精度
 
@@ -142,27 +147,45 @@ def append_summary(row):
 
 # ==== 4. 主流程 ====
 def main():
-    ap = argparse.ArgumentParser(description="T1 实验矩阵批跑入口 (W4)")
+    ap = argparse.ArgumentParser(description="T1 实验矩阵批跑入口 (W4/W5)")
     ap.add_argument("--arch", required=True, choices=["r50", "vits", "vits1k", "deitt"])
     ap.add_argument("--mode", required=True, choices=MODES)
     ap.add_argument("--data", required=True, type=int, choices=list(DATA_TIERS))
     ap.add_argument("--seed", type=int, default=42)
-    ap.add_argument("--note", default="", help="26 列里唯一手填的结论列")
+    # —— W5 维度 D 的两个开关 (口径 24–26) ——
+    # 为什么必须补: 不补则 6 个 D 组无法表达 aug/distill -> 落进同一个 eid -> 第 2 组起被静默 [skip]
+    #   (W5 坑位 10, 本周最易漏); 补上后 eid 会带 -strong / -distill 后缀
+    ap.add_argument("--aug", default="basic", choices=list(AUG_CHOICES),
+                    help="增强档: basic (W4 口径) / strong (DeiT 配方, 口径 25)")
+    ap.add_argument("--distill", action="store_true",
+                    help="启用 hard 蒸馏 (需 teacher 检查点; 口径 26/27)")
+    ap.add_argument("--note", default="", help="27 列里唯一手填的结论列")
     ap.add_argument("--dry-run", action="store_true", help="试跑: eid 加 -dry 后缀, 不写汇总表")
     ap.add_argument("--no-resume", action="store_true", help="已存在 json 也强制重跑")
     ap.add_argument("--save-detail", action="store_true", help="额外落 perclass/confusion")
     args = ap.parse_args()
 
     cfg = ProtocolCfg(arch=args.arch, mode=args.mode, data=args.data, seed=args.seed,
-                      note=args.note, save_detail=args.save_detail)
+                      note=args.note, save_detail=args.save_detail,
+                      aug=args.aug, distill=args.distill)
     eid = cfg.eid + ("-dry" if args.dry_run else "")
     os.makedirs(RESULTS_DIR, exist_ok=True)
     json_path = os.path.join(RESULTS_DIR, f"{eid}.json")
     hist_path = os.path.join(RESULTS_DIR, f"{eid}_history.csv")
 
-    # 断点续跑: 已有该组 json 就跳过 (口径: 删掉该 json 即可重跑, 不影响其它组)
+    # 断点续跑: 已有该组 json 就跳过; **但必须先比对口径** ——
+    #   坑 (W5 坑位 3): 若 eid 相同而 aug/distill 不同 (例如忘了加 --aug), 直接 [skip] 会让人
+    #   以为"这组跑过了", 实际产物是旧口径的。所以改成"口径不一致就报错", 不静默跳过
     if os.path.exists(json_path) and not args.no_resume:
-        print(f"[skip] {eid} 已完成 ({json_path}); 用 --no-resume 强制重跑")
+        with open(json_path, "r", encoding="utf-8") as fh:
+            old = json.load(fh)
+        same = (old.get("aug") == cfg.aug) and (int(old.get("distill", 0)) == int(cfg.distill))
+        if not same:
+            print(f"[fatal] {eid} 已存在但口径不同: json(aug={old.get('aug')}, "
+                  f"distill={old.get('distill')}) vs 本次(aug={cfg.aug}, distill={int(cfg.distill)})")
+            print("        -> 拒绝静默跳过; 用 --no-resume 覆盖, 或改用正确的 eid 后缀")
+            return 1
+        print(f"[skip] {eid} 已完成且口径一致 ({json_path}); 用 --no-resume 强制重跑")
         return 0
 
     print(f"[run ] {eid}  (arch={cfg.arch} mode={cfg.mode} data={cfg.data} seed={cfg.seed})")

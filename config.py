@@ -176,6 +176,11 @@ class ProtocolCfg:
     #   示例值: False
     #   为什么: 维度 D (有/无 teacher) 是 W5 的事; W4 只训 head, head_dist 不参与 loss
 
+    distill_alpha: float = 0.5
+    # 变量 distill_alpha: float, 蒸馏项权重 α (口径 26)
+    #   示例值: 0.5 (DeiT 官方 hard 蒸馏取值)
+    #   为什么: 本项目只做消融不做调参, 这个值整周固定; 落进 config 才有"唯一配置源"
+
     eval_token: str = ""
     # 变量 eval_token: str, 评估 token (空串 = 用注册表默认)
     #   示例值: "cls" (ViT/DeiT) / "gap" (ResNet)
@@ -212,6 +217,8 @@ class ProtocolCfg:
             raise ValueError(f"未知 eval_token={self.eval_token}; 应为 {EVAL_TOKENS}")
         if self.aug not in AUG_CHOICES:
             raise ValueError(f"未知 aug={self.aug}; 应为 {AUG_CHOICES}")
+        if not 0.0 <= self.distill_alpha <= 1.0:
+            raise ValueError(f"distill_alpha={self.distill_alpha} 越界; 应在 [0, 1]")
         if self.degraded not in DEGRADED_CHOICES:
             raise ValueError(f"未知 degraded={self.degraded}; 应为 {DEGRADED_CHOICES}")
 
@@ -236,10 +243,17 @@ class ProtocolCfg:
 
     @property
     def eid(self) -> str:
-        # 变量 eid: str, 实验编号 (清单 A1)
-        #   示例值: "vits-z2-25-s42"
-        #   为什么: 唯一编号; 文件名、CSV 主键、日志都靠它
-        return f"{self.arch}-{self.mode.lower()}-{self.data}-s{self.seed}"
+        # 变量 eid: str, 实验编号 (清单 A1) + 口径后缀
+        #   示例值: "vits-z2-25-s42" / "deitt-z2-100-s42-strong" / "deitt-z2-100-s42-strong-distill"
+        #   为什么必须带后缀: 不带则 A1/A3/A5 会落到同一个 eid, run_matrix 见 json 存在就 [skip]
+        #     -> 你以为跑了 6 组, 实际只有 1 组 (W5 坑位 10, 本周最易漏的一条)
+        #   为什么 basic+无蒸馏时不加后缀: 保证 W4 已跑 36 组的 eid 一个都不变 (既有结果不受影响)
+        base = f"{self.arch}-{self.mode.lower()}-{self.data}-s{self.seed}"
+        if self.aug != "basic":
+            base += f"-{self.aug}"          # 例: -strong
+        if self.distill:
+            base += "-distill"
+        return base
 
     def preproc_str(self, mean, std) -> str:
         """

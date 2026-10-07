@@ -257,6 +257,24 @@ def train_and_eval(model, tr_loader, va_loader, optimizer, device, cfg):
     # 变量 scaler: GradScaler, 混合精度的梯度缩放器
     #   为什么: fp16 下小梯度会下溢成 0 -> 放大再反传; enabled=False 时全部直通
     scaler = torch.amp.GradScaler("cuda", enabled=amp)
+    # —— W5 维度 D 的两个装置 (只在对应开关打开时构建; 关掉时下面走的仍是与 W4 逐位一致的旧路径) ——
+    from distill import (build_mixup, two_path_logits, hard_distill_loss,   # noqa: E402
+                         soft_target_cross_entropy, TeacherWrapper)
+    # 设计决策 1: mixup **只跟 aug="strong" 走**, 不与 distill 绑定 ——
+    #   为什么: A3/A4 = "basic + 有 teacher", 必须与 A1/A2 = "basic + 无 teacher" **只差 teacher 一个开关**;
+    #   若给 distill 臂也加 mixup, Δ蒸馏 就混进了 mixup 的效应 (口径 25 把 Mixup 归入 strong 配方)
+    mixup = build_mixup(cfg.num_classes) if cfg.aug == "strong" else None
+    # 变量 teacher: TeacherWrapper|None, 在线前向的硬标签来源
+    #   示例值: cfg.distill=True -> 实例; 否则 None
+    #   为什么 None 时完全不建: 省一次 95MB 权重加载, 且保证 distill=False 的组与 W4 逐位一致
+    teacher = TeacherWrapper(device=device, num_classes=cfg.num_classes) if cfg.distill else None
+    if teacher is not None:
+        # 口径 27 的前置断言: teacher 与 student 必须吃同一套归一化, 否则"同一份 batch"不成立
+        #   这里取 data_cfg 的方式与 data.build_transform 同源 (都来自 resolve_data_config),
+        #   数值必然一致; 断言的价值在"将来换架构时立刻炸", 而不是靠人记得检查
+        import timm
+        from distill import assert_teacher_preproc_matches
+        assert_teacher_preproc_matches(teacher, timm.data.resolve_data_config({}, model=model))
     best_top1, best_epoch, best_state, bad = -1.0, -1, None, 0
     history, epochs_run = [], 0
     for epoch in range(cfg.epochs):
@@ -265,11 +283,32 @@ def train_and_eval(model, tr_loader, va_loader, optimizer, device, cfg):
         running = 0.0
         for x, y in tr_loader:
             x = x.to(device, non_blocking=True); y = y.to(device, non_blocking=True)
+            # 第 1 步: batch 级 mixup/cutmix —— **直接传类号 y, 不要自己 one-hot!**
+            #   坑 1 (2026-10-07 实际踩到, 已修): timm 1.0.30 的 Mixup 内部会自己 one_hot + 加
+            #     label_smoothing。多喂一层 one-hot 等于做 one_hot(one_hot(y)) -> target 变 (B, C, C),
+            #     展平后成 (B*C, C); 训练时立刻 RuntimeError:
+            #     "The size of tensor a (3264) must match the size of tensor b (32)" (= 32*102 vs 32)
+            #   坑 2: 它对 x 与 y **同时**改动, 所以只能在这里做, 不能进 Dataset.transform (口径 25)
+            if mixup is not None:
+                x, target = mixup(x, y)
+            else:
+                target = y
             optimizer.zero_grad(set_to_none=True)
             # torch.amp.autocast("cuda", enabled=amp): 前向用 fp16 加速 (数值敏感处自动回退 fp32)
             with torch.amp.autocast("cuda", enabled=amp):
-                logits = forward_logits(model, x, spec)
-                loss = criterion(logits, y)
+                if teacher is None:
+                    # 无 teacher: 与 W4 完全同一条前向 + 同一条 loss
+                    logits = forward_logits(model, x, spec)
+                    loss = criterion(logits, target) if target.dtype == torch.long \
+                        else soft_target_cross_entropy(logits, target)
+                else:
+                    # 第 2 步: 两路 logits + teacher 硬标签, teacher 作用在**同一份 mix 后的 x** 上
+                    #   若改成"预计算 clean 图缓存" -> y_t == y -> 蒸馏退化成第二个 CE
+                    #   -> Δ蒸馏 结构性恒等于 0 (口径 27 要防的正是这个, 且只救得了 strong 臂)
+                    logits_cls, logits_dist = two_path_logits(model, x)
+                    y_t = teacher.hard_label(x)
+                    loss, _ = hard_distill_loss(logits_cls, logits_dist, target, y_t,
+                                                cfg.distill_alpha)
             scaler.scale(loss).backward()              # 缩放后反传
             scaler.step(optimizer)                     # 更新 (含 inf/nan 跳过)
             scaler.update()
@@ -369,6 +408,33 @@ def check_assertions(cfg, model, before, metrics):
         "ok": bool(ok and head_classes_ok and val_acc_sane),
     }
 
+# ==== 9.5. 蒸馏副读数 (口径 24) ====
+@torch.no_grad()
+def eval_distavg(model, loader, device):
+    """
+    副读数: 用两头 logits 平均 ((cls+dist)/2) 在 loader 上算 top-1
+
+    参数:
+        model (nn.Module): DeiT 蒸馏版 (需 head + head_dist)
+        loader: DataLoader (通常传 val_loader)
+        device (str)
+    返回:
+        float — top-1 准确率 (比例, 0~1)
+    """
+    # 为什么要有这一列: 主口径走 cls, 而蒸馏项训的是 head_dist ——
+    #   副读数用来证明"蒸馏的收益确实经共享 backbone 传到了 cls 那一路", 而不是只体现在 dist 头上;
+    #   它**不参与**任何主口径判断, 只进 experiments.csv 的 top1_val_distavg 列
+    from distill import two_path_logits, distavg_logits
+    model.eval()
+    correct = total = 0
+    for x, y in loader:
+        x = x.to(device)
+        cls_l, dist_l = two_path_logits(model, x)
+        pred = distavg_logits(cls_l, dist_l).argmax(dim=1).cpu()
+        correct += int((pred == y).sum().item())
+        total += y.numel()
+    return correct / max(total, 1)
+
 # ==== 10. 统一入口 ====
 def run_protocol(cfg: ProtocolCfg):
     """
@@ -402,7 +468,10 @@ def run_protocol(cfg: ProtocolCfg):
     # ⚠ 口径 6 的落点: 训练变换必须由 cfg.train_aug 决定, 不能恒传 True ——
     #   Z0 是"提特征 + NCM", 若用带随机裁剪/翻转的变换提特征, 类中心会混入增强噪声,
     #   而 val 走 center crop -> 训练/评估分布不匹配, 整行 Z0 系统性偏低 (实测掉 7~11 点)
-    tr_tf, data_cfg = build_transform(spec, cfg.train_aug, model=model)
+    # ⚠ 口径 25 的落点: 训练变换的"强/弱"由 cfg.aug 决定 ——
+    #   aug="basic" 时 extra 为空 -> 与 W4 逐位一致 (这是"basic 臂直接复用 W4 数字"的前提);
+    #   aug="strong" 时追加 RandAugment。评估变换恒为 basic (口径 3/20 要求 val 口径全程不变)
+    tr_tf, data_cfg = build_transform(spec, cfg.train_aug, model=model, aug=cfg.aug)
     ev_tf, _ = build_transform(spec, False, model=model)
     preproc = cfg.preproc_str(data_cfg["mean"], data_cfg["std"])
     tier_idx = _tier_idx(cfg)          # 只取一次: 每次调用都要重扫 train 标签, 批跑时是纯浪费
@@ -440,6 +509,9 @@ def run_protocol(cfg: ProtocolCfg):
     else:
         top1_train, gap = None, None
 
+    # 蒸馏副读数 (口径 24): 只在蒸馏组算; 非蒸馏架构为 None -> CSV 该列自然留空
+    top1_val_distavg = eval_distavg(model, val_loader, device) if cfg.distill else None
+
     checks = check_assertions(cfg, model, before, metrics)
     minutes = (time.time() - t_start) / 60.0
     peak_mem = (torch.cuda.max_memory_allocated() / 2**30) if torch.cuda.is_available() else 0.0
@@ -453,6 +525,8 @@ def run_protocol(cfg: ProtocolCfg):
         "best_epoch": best_epoch, "epochs_run": epochs_run,
         # —— 四口径 ——
         **metrics,
+        # —— 副读数 (口径 24; 非蒸馏组为 None) ——
+        "top1_val_distavg": top1_val_distavg,
         # —— 过拟合 (A4) ——
         "top1_train": top1_train, "gap": gap,
         # —— 资源 (A6) ——
