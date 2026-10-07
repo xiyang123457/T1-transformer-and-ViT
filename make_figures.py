@@ -11,7 +11,11 @@ make_figures.py — W5 维度 D 的图表生成器 (C1 阶梯图 + C3 消融图 
 
 产出 (figures/, 目录不存在会自动创建; 每张图同时出 .png + .pdf, 300 dpi):
     - F1_ladder.png/.pdf            C1: 3 个 subplot (top-1 / macro-F1 / worst-5 recall) —— 计划 D4 规格
-    - F1_ladder_<i>_<metric>.png/.pdf  同一数据按 W4 约定"每指标一张 PNG"再出一份 (独立指标不共画布)
+                                    **编码: 颜色 = 策略 (Z0 蓝 / Z1 橙 / Z2 绿); 线型 + 标记 = 架构**
+                                    —— 12 条线只有 3 种颜色会糊成一片 (2026-10-07 用户当场指出
+                                    "颜色都是混着的根本看不了"), 故每种架构再固定一套线型与标记
+    - F1_ladder_<i>_<metric>.png/.pdf  **按架构拆成 2x2 小多图** (每子图只画 3 条策略线, 颜色区分策略)
+                                    —— 报告正文用这张: 一屏 3 条线不会误读; 含 gap (H5 唯一判据)
     - F3_ablation.png/.pdf          C3: 100% 与 25% 各一子图, 每子图 4 根柱 (基线/强增强/蒸馏/双开),
                                     柱顶标 Δ蒸馏 与 Δ增强; 贴顶组 (best_epoch>=28) 用斜纹标出 (口径 29)
     - F2_curves.png/.pdf            补充: 8 个臂的训练曲线 (loss 与 top-1 配对, 两档各一对)
@@ -74,8 +78,18 @@ ABL_TIERS = (100, 25)
 # 变量 MODE_COLORS: dict[str, str], 策略配色 (照抄 make_report.py, 保证 W4/W5 同色可对读)
 MODE_COLORS = {"Z0": "tab:blue", "Z1": "tab:orange", "Z2": "tab:green"}
 
-# 变量 DASH_ARCHS: tuple[str, ...], 画虚线的架构 (起点消融; W4 约定)
-DASH_ARCHS = ("vits1k",)
+# 变量 ARCH_STYLE: dict[str, tuple[str, str]], 架构 -> (线型, 标记)
+#   示例值: {"r50": ("-", "o"), "vits": ("--", "s"), ...}
+#   为什么必须再按架构区分一层: 颜色已被策略占用 (3 色), 12 条线只靠颜色分辨会糊成一片 ——
+#     2026-10-07 用户当场指出"颜色都是混着的根本看不了"。给每种架构固定 (线型, 标记) 后,
+#     任一条线的 (颜色, 线型, 标记) 三元组唯一 ✓ (W4 只用"vits1k 虚线"区分 1 个架构, 不够用)
+ARCH_STYLE = {"r50": ("-", "o"), "vits": ("--", "s"), "vits1k": (":", "^"), "deitt": ("-.", "D")}
+
+# 变量 ARCH_ORDER: tuple[str, ...], 小多图的子图顺序 (CNN 参照 -> 三个 Transformer)
+ARCH_ORDER = ("r50", "vits", "vits1k", "deitt")
+
+# 变量 MODES: tuple[str, ...], 三档策略 (与 config.MODES 同序, 供按策略画线)
+MODES = ("Z0", "Z1", "Z2")
 
 # 变量 ARM_KEYS: tuple[tuple], 维度 D 的 4 个 arm = (短名, aug, distill)
 #   为什么用 aug/distill 而非 eid 后缀来选: 选的是**语义**(翻哪个开关), eid 只是它的编码
@@ -228,9 +242,31 @@ def save_both(fig, stem):
     return out
 
 # ==== 5. C1 阶梯图 ====
+def plot_combo(ax, agg, arch, mode, label):
+    """
+    在坐标轴上画一个"架构-策略"组合 (颜色 = 策略, 线型与标记 = 架构)
+
+    参数:
+        ax (Axes); agg (dict): agg_baseline 的输出
+        arch/mode (str); label (str): 图例名 (全组合图用 "arch-mode", 小多图只用策略)
+    返回:
+        int: 画了 1 条返回 1, 该组合无数据返回 0
+    """
+    xs = [t for t in TIERS if (arch, mode, t) in agg]
+    if not xs:
+        return 0
+    ys = [agg[(arch, mode, t)][0] for t in xs]
+    es = [agg[(arch, mode, t)][1] or 0.0 for t in xs]
+    linestyle, marker = ARCH_STYLE.get(arch, ("-", "o"))
+    # errorbar(...) -> 折线 + 误差棒; yerr=0 时不画棒 (单 seed 的正常形态)
+    ax.errorbar(xs, ys, yerr=es, marker=marker, markersize=4.5, capsize=3,
+                color=MODE_COLORS.get(mode, "gray"), linestyle=linestyle, label=label)
+    return 1
+
+
 def draw_ladder(ax, rows, metric, ylabel):
     """
-    在一个坐标轴上画某指标的全部"架构-策略"折线
+    在一个坐标轴上画**全部 12 个**"架构-策略"组合
 
     参数:
         ax (Axes); rows (list[dict]); metric (str); ylabel (str)
@@ -238,28 +274,44 @@ def draw_ladder(ax, rows, metric, ylabel):
         int: 画出的折线条数 (0 = 该指标无数据)
     """
     agg = agg_baseline(rows, metric)
-    for arch, mode in sorted({(k[0], k[1]) for k in agg}):
-        xs = [t for t in TIERS if (arch, mode, t) in agg]
-        if not xs:
-            continue
-        ys = [agg[(arch, mode, t)][0] for t in xs]
-        es = [agg[(arch, mode, t)][1] or 0.0 for t in xs]
-        # errorbar(...) -> 折线 + 误差棒; yerr=0 时不画棒 (单 seed 的正常形态)
-        ax.errorbar(xs, ys, yerr=es, marker="o", capsize=3,
-                    color=MODE_COLORS.get(mode, "gray"),
-                    linestyle="--" if arch in DASH_ARCHS else "-",
-                    label=f"{arch}-{mode}")
+    n = 0
+    for arch in ARCH_ORDER:
+        for mode in MODES:
+            n += plot_combo(ax, agg, arch, mode, label=f"{arch}-{mode}")
     ax.set_xlabel("train subset (%)")
     ax.set_ylabel(ylabel)
     ax.set_xticks(list(TIERS))
     ax.grid(alpha=0.3)
-    ax.legend(fontsize=7, ncol=2)
-    return len({(k[0], k[1]) for k in agg})
+    ax.legend(fontsize=6.5, ncol=4)
+    return n
+
+
+def draw_ladder_by_arch(ax, rows, metric, arch, ylabel=None):
+    """
+    只画**某一个架构**的 3 条策略线 (小多图用: 一屏 3 条线, 不会糊)
+
+    参数:
+        ax (Axes); rows (list[dict]); metric (str); arch (str); ylabel (str|None)
+    返回:
+        int: 画出的线条数
+    """
+    agg = agg_baseline(rows, metric)
+    n = 0
+    for mode in MODES:
+        n += plot_combo(ax, agg, arch, mode, label=mode)
+    ax.set_title(arch, fontsize=10)
+    ax.set_xticks(list(TIERS))
+    ax.grid(alpha=0.3)
+    ax.legend(fontsize=7)
+    if ylabel:
+        ax.set_ylabel(ylabel)
+    return n
 
 
 def make_f1(rows):
     """
-    C1: 先按计划出"3 个 subplot 并排"的一张, 再按 W4 约定每人一张 (含 gap)
+    C1: ① 计划 D4 规格的"3 指标并排"一张 (全 12 条线, 靠线型+标记分辨);
+        ② 每指标一张的 2x2 小多图 (按架构拆, 每子图 3 条线) —— 报告正文用
 
     参数:
         rows (list[dict])
@@ -270,19 +322,22 @@ def make_f1(rows):
     label_of = dict(LADDER_METRICS)
 
     # —— 5.1 计划 D4 的规格: 三个有效读数并排 ——
-    fig, axes = plt.subplots(1, len(LADDER3), figsize=(16, 4.6))
+    fig, axes = plt.subplots(1, len(LADDER3), figsize=(17, 5.4))
     for ax, metric in zip(axes, LADDER3):
         draw_ladder(ax, rows, metric, label_of[metric])
         ax.set_title(metric, fontsize=10)
-    fig.suptitle(f"{TAG} C1 ladder (dashed = vits1k start ablation)", fontsize=11)
+    fig.suptitle(f"{TAG} C1 ladder - color = strategy (Z0/Z1/Z2), line+marker = arch "
+                 f"(vits1k = dotted/^)", fontsize=10)
     fig.tight_layout()
     paths += save_both(fig, os.path.join(OUT_DIR, "F1_ladder"))
 
-    # —— 5.2 W4 约定: 每个指标单独一张 (独立指标共画布会让读者误以为它们可比) ——
+    # —— 5.2 小多图: 每指标一张, 4 个架构各一子图 (每子图只有 3 条线 -> 一眼能读) ——
     for i, (metric, label) in enumerate(LADDER_METRICS, start=1):
-        fig, ax = plt.subplots(figsize=(7, 4.5))
-        draw_ladder(ax, rows, metric, label)
-        ax.set_title(f"{TAG} C1 ladder - {metric}", fontsize=10)
+        fig, axes = plt.subplots(2, 2, figsize=(11, 7.6))
+        for ax, arch in zip(axes.ravel(), ARCH_ORDER):
+            draw_ladder_by_arch(ax, rows, metric, arch, ylabel=label)
+        fig.suptitle(f"{TAG} C1 ladder - {metric}   (one panel per arch; color = strategy)",
+                     fontsize=10.5)
         fig.tight_layout()
         paths += save_both(fig, os.path.join(OUT_DIR, f"F1_ladder_{i}_{metric}"))
     return paths

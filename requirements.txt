@@ -1,12 +1,47 @@
 # ── 依赖清单 ──────────────────────────────────────────────
+# 口径: A 段 = 代码**直接 import** 的包 (取证: 全仓 .py 的 ^import/^from 去重);
+#       B 段 = 不直接 import, 但"缺了就下不到权重 / 读不了图"的运行时依赖。
+# 完整环境快照见 `env.txt` (make_env.py 生成, 含 CUDA/cuDNN/GPU/驱动等 pip 管不到的东西):
+#   本文件管"该装哪些包", env.txt 管"装出来到底是什么" —— 两者一起才算可复现声明。
+# 版本一律**钉死**到实测值 (2026-10-07): 本项目全部结论都带 git_commit 溯源, 依赖浮动会让
+#   同一 commit 重跑不出同一个数 (W7 补种子时尤其致命)。
+
+# ── A. 代码直接 import ─────────────────────────────────────
 # PyTorch（RTX 5060 = Blackwell sm_120，必须用 cu128+ 的 wheel，否则静默装成 CPU 版）
-# 你当前 conda env 'pytorch' 已装 torch==2.9.0+cu130，全新环境请改用下方命令安装：
-#   pip install torch --index-url https://download.pytorch.org/whl/cu130
+# ⚠ torch 与 torchvision **必须同一次、同一个 index-url 装** —— 分两次装极易出现
+#   "torch 是 cu130 而 torchvision 是 CPU 版" 的半残组合 (import 或 transforms 阶段才炸)。
+#   全新环境请用:
+#     pip install torch torchvision --index-url https://download.pytorch.org/whl/cu130
 torch==2.9.0
+torchvision==0.24.0
 
-# ViT / DeiT 权重与模型
-timm==1.*
+# ViT / DeiT 模型与权重 (口径 4 的三个起点: augreg_in21k_ft_in1k / augreg_in1k / fb_in1k)
+#   为什么钉 1.0.30 而不是 1.*: 本项目的 Mixup target 契约是按这个版本验的
+#   (verify_w5d2.py 的 S6 回归检查), 换版本必须重跑 S6 才知道契约有没有变
+timm==1.0.30
 
-# 工具
-pandas
-matplotlib
+# 数值 / 分层抽样 / 逐类统计 (data.py, make_subsets.py, protocol.py, run_matrix.py)
+numpy==2.2.6
+
+# 全部图表 (make_figures.py / make_report.py / plot_utils.py) —— 无界面后端 Agg, 只落 png+pdf
+matplotlib==3.10.9
+
+# ── B. 运行时依赖 (不直接 import, 但缺了跑不起来) ───────────
+# timm 下载权重与本地缓存 —— 本项目大量使用 HF_HUB_OFFLINE=1 (防联网卡住),
+#   离线模式下能不能命中缓存完全由它决定 (W4 曾因 augreg_in1k 未缓存, 4 组秒失败)
+huggingface_hub==2.0.0
+# timm 的权重文件格式 (load_state_dict 真正读的那些 .safetensors)
+safetensors==0.8.0
+# 图像读取 (经 torchvision.transforms 使用, 代码里没有直接 import PIL)
+pillow==12.0.0
+
+# ── C. 交互/探查用 (代码里未 import; 想减依赖可直接删) ──────
+pandas==2.3.3
+
+# ── 怎么验证装对了 ──────────────────────────────────────────
+# python -c "import torch, torchvision, timm, numpy, matplotlib; \
+#   print(torch.__version__, torchvision.__version__, timm.__version__, numpy.__version__, matplotlib.__version__); \
+#   print('cuda', torch.cuda.is_available(), torch.version.cuda)"
+# 应打印: 2.9.0+cu130 0.24.0+cu130 1.0.30 2.2.6 3.10.9
+#         cuda True 13.0
+# 判据: `+cu130` 与 `cuda True` **缺一不可** —— 只看到 2.9.0 而没版本后缀 = 装成了 CPU 版
