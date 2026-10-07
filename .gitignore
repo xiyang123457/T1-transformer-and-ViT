@@ -34,6 +34,9 @@ logs/
 # 验证脚本的一次性快照 (verify_w5d2.py 每次运行自己重新生成, 不入库)
 results/_*.json
 
+# 一次性迁移/改动的备份 (migrate_csv.py 产物; 原文件在 git 历史里可查)
+*.bak
+
 # IDE 会话/项目数据目录 (系统要求保留该目录, 但不入库 —— 内容频繁变动、非实验产物)
 .codebuddy/
 

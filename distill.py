@@ -230,6 +230,10 @@ def selftest_align(device=None, batch=8, full=True):
         dict: 各检查项的实测值 (全部达标才算过)
     """
     import timm
+    # 坑 (2026-10-07 批跑前置自检抓到): `import timm` **不会**自动暴露子模块 `timm.loss`
+    #   -> 直接写 timm.loss.SoftTargetCrossEntropy() 会 AttributeError: module 'timm' has no attribute 'loss'。
+    #   子模块必须显式导入 (只有别处恰好 import 过才会"看起来能用", 属于隐式依赖)
+    import timm.loss
     from config import ARCH_REGISTRY
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
     torch.manual_seed(0)
@@ -244,9 +248,18 @@ def selftest_align(device=None, batch=8, full=True):
         # ① dist 路: 与"模型内置的同一计算"必须逐位相同 (验证我们没写错 norm/索引)
         feat = model.forward_features(x)
         out["dist 通路 max|diff|"] = (dist_mine - model.head_dist(model.norm(feat[:, 1]))).abs().max().item()
-        # ② cls 路: 官方 eval 输出 = (head(cls)+head_dist(dist))/2 -> 反解出 cls 做交叉验证
-        official = model(x)
-        out["cls 通路 max|diff|"] = (cls_mine - (2.0 * official - dist_mine)).abs().max().item()
+        # ② cls 路: 与口径 24 的**展开式**逐位比对 (head(norm(feat[:, 0])))
+        #   ⚠ 这里**故意不调 model(x)** —— 计划 §七 明令禁止:
+        #     曾用"eval 下 model(x) 等于两头平均"反解 cls 做交叉验证, 2026-10-07 实测该前提不成立
+        #     (下面「诊断」那行实测 max|diff| = 1.96), 会得出"cls 通路错了"的假结论。
+        #     所以 model(x) 只作为**诊断量**记录, 不进判定
+        out["cls 通路 max|diff|"] = (cls_mine - model.head(model.norm(feat[:, 0]))).abs().max().item()
+        # 诊断量 (不参与判定): 作为"禁用 model(x)"的实证
+        #   为什么兼容 tuple: 若哪天 distilled_training 被误开(timm 0.6- 的坑), model(x) 会返回 tuple,
+        #   这里取第 0 项而不是让整个自检崩掉 —— 该误开的正面拦截在 protocol.py 侧
+        mx_out = model(x)
+        mx_out = mx_out[0] if isinstance(mx_out, (tuple, list)) else mx_out
+        out["诊断: model(x) vs 两路平均"] = (mx_out - (cls_mine + dist_mine) / 2.0).abs().max().item()
 
         # ③ 蒸馏损失: 手写 vs 展开式 + α 两个极端 + 软标签 CE vs timm
         y = torch.randint(0, NUM_CLASSES, (batch,), device=device)
@@ -269,7 +282,12 @@ def selftest_align(device=None, batch=8, full=True):
         from torch.utils.data import DataLoader
         tr_tf, tr_cfg = D.build_transform(ARCH_REGISTRY["deitt"], train=True, model=model, aug="basic")
         assert_teacher_preproc_matches(teacher, tr_cfg)          # 口径 27 的前置条件
-        va_tf, _ = D.build_transform(ARCH_REGISTRY["deitt"], train=False, model=model)
+        # ⚠ 复算 teacher 准确率必须用 **teacher 自己的 (R50) eval 变换**, 不能用 student(deitt) 的:
+        #   两者 Resize/Crop/interpolation 不同 (R50: Resize256+CenterCrop224 双线性;
+        #   deitt: timm crop_pct=0.875 + bicubic)。2026-10-07 实测: 拿 deitt 变换评 R50 只有 0.9245,
+        #   比 ckpt 里记的 0.9333 低 0.88 点 —— 那是变换不匹配, **不是类别错位**。
+        #   本检查的目的("类别顺序未错位")只有用 teacher 自己的变换才对得上账 (错位会掉到 ~1%)
+        va_tf, _ = D.build_transform(ARCH_REGISTRY["r50"], train=False)
         dl_val = DataLoader(D.get_dataset("val", va_tf), batch_size=batch)
         correct = total = 0
         for xb, yb in dl_val:
