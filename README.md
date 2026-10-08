@@ -103,7 +103,7 @@
 | 正弦位置编码与可学习位置编码 | `vit.py` | 公式实现 + 频率可视化 |
 | ViT 编码块（pre-LN + 残差 + MLP） | `vit.py` | 与 `timm` 的 `vit_small_patch16_224` 首个 blocks 对齐，误差 **4.71e-06** |
 
-**在 AI 协助下完成的部分**（W3 之后的实验骨架）：数据管道与嵌套分层子集、配置系统、三种迁移协议的训练与评估循环、硬标签蒸馏装置、矩阵批跑与出图脚本。这部分由我设定验收标准与指标定义、逐文件复核，并做过端到端试跑验证。
+**工程实现**：W3 之后的实验骨架——数据管道与嵌套分层子集、配置系统、三种迁移协议的训练与评估循环、硬标签蒸馏装置、矩阵批跑与出图脚本。规格与验收标准由我设定，实现借助 AI 工具完成。
 
 **正确性保证**：教师模型的验证准确率被要求**落在 0.9333 ± 0.001**（`distill.py` 自检断言；checkpoint 记录 0.9333，自检在验证集上重算为 0.9324，差异来自批大小与 transform 口径）——这是唯一能当场抓出「类别顺序错位」这类静默错误的检查（顺序错了不会报错，但这个数一定对不上）。
 
@@ -193,7 +193,10 @@ python make_figures.py
 
 ## 参考
 
-- ViT：[An Image is Worth 16x16 Words](https://arxiv.org/abs/2010.11929) ｜ DeiT：[Training data-efficient image transformers & distillation through attention](https://arxiv.org/abs/2012.12877) ｜ timm：<https://github.com/huggingface/pytorch-image-models> ｜ Flowers-102：<https://www.robots.ox.ac.uk/~vgg/data/flowers/102/>
+- ViT：[An Image is Worth 16x16 Words](https://arxiv.org/abs/2010.11929)
+- DeiT：[Training data-efficient image transformers & distillation through attention](https://arxiv.org/abs/2012.12877)
+- timm：<https://github.com/huggingface/pytorch-image-models>
+- Flowers-102：<https://www.robots.ox.ac.uk/~vgg/data/flowers/102/>
 
 ## 作者
 
