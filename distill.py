@@ -322,9 +322,9 @@ if __name__ == "__main__":
           and (res.get("y_t != y (basic)") is None or res["y_t != y (basic)"] < 0.06)
           # —— 坑位 1 的分级断言 (口径 28) ——
           # 为什么只卡 strong 臂: basic 臂的 Δ蒸馏 预期 ≈0 是**结构性**的 (teacher 自己就是
-          #   basic 训练出来的, 在 basic 视图上仍 97.65-99.02% 正确), 对它设阈值会误触发;
+          #   basic 训练出来的, 在 basic 视图上仍约 95.7% 正确), 对它设阈值会误触发;
           # strong 臂才是"在线前向到底接上了没"的照妖镜 —— 实测 teacher 在 RandAugment 视图上
-          #   只有 83-85%。若这里突然 >=0.92, 说明 teacher 看到的是**没加过增强的同一份图**
+          #   只有约 86.3%。若这里突然 >=0.92, 说明 teacher 看到的是**没加过增强的同一份图**
           #   (即偷缓存了 clean 图), 蒸馏会退化成第二次 CE -> Δ蒸馏 结构性恒为 0 (口径 27)
           and (res.get("teacher top1 (train+strong)") is None
                or res["teacher top1 (train+strong)"] < 0.92))

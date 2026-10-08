@@ -146,7 +146,7 @@ K =
 
 **为什么是 `√d_k` 不是 `d_k`？** 因为算出来的分数，波动幅度大约就是 `√d_k` 这个量级（方差是 `d_k`，标准差是 `√d_k`），要除就除标准差。
 
-具体的实测数字（不缩放会退化成 `100% / 0% / 0%`）在 `attention_math.md` 第 3 节。
+具体的实测数字（不缩放会退化成 `100% / 0% / 0%`）可直接运行 `test/attention_debug.py` 复现。
 
 ### `if mask is not None: scores = scores.masked_fill(mask, float('-inf'))`
 
